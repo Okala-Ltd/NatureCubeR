@@ -44,7 +44,7 @@ get_key <- function() {
 #' @author
 #' Adam Varley
 #' @export
-auth_headers <- function(api_key, okala_url="https://naturecube.io/api/"){
+auth_headers <- function(api_key, okala_url="https://naturecube.io/api"){
   root <- httr2::request(okala_url)
   d = list(key=api_key,
            root=root)

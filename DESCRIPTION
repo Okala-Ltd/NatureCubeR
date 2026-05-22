@@ -1,7 +1,7 @@
 Package: okalaR
 Type: Package
 Title: API wrapper around the okala dashboard interface
-Version: 1.1.4
+Version: 1.1.5
 Authors@R: 
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
 Description: Allows basic reading and writing of data to and from your project on the okala dashboard
