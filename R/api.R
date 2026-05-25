@@ -365,7 +365,6 @@ add_IUCN_labels <- function(hdr,labels,chunksize){
 
 sendupatedlabels <- function(hdr,datachunk) {
 
-
   datachunk = jsonlite::toJSON(datachunk,pretty=TRUE)
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root,"updateSegmentLabels", hdr$key)
@@ -375,6 +374,7 @@ sendupatedlabels <- function(hdr,datachunk) {
   resp <- httr2::resp_body_string(preq)
 
   return(jsonlite::fromJSON(resp))
+  
 }
 
 #' @title Push new labels using a chunked process

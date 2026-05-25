@@ -102,6 +102,8 @@ To build the package locally, use the following command in your R console:
 
 ```r
 devtools::build()
+
+devtools::load_all()
 ```
 
 This will create a `.tar.gz` file that you can install or distribute.
