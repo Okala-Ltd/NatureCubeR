@@ -11,4 +11,9 @@ Provides functions to interact with the Okala dashboard API, including project, 
 \author{
 \strong{Maintainer}: Adam Varley \email{adam@okala.io}
 
+Authors:
+\itemize{
+  \item Adam Varley \email{adam@okala.io}
+}
+
 }

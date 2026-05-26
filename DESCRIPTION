@@ -1,20 +1,21 @@
 Package: okalaR
 Type: Package
 Title: API wrapper around the okala dashboard interface
-Version: 1.1.5
+Version: 1.1.7
 Authors@R: 
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
-Description: Allows basic reading and writing of data to and from your project on the okala dashboard
-License: Apache License 2.0
+Description: Allows basic reading and writing of data to and from your project on the Okala dashboard.
+License: Apache License 2.0 | file LICENSE
 Encoding: UTF-8
-RoxygenNote: 7.3.2
+RoxygenNote: 8.0.0
 Imports:
     httr2,
     jsonlite,
-    jsonify,
+    magrittr,
     leaflet,
     geojsonsf,
     tibble,
     dplyr,
     sf,
-    scales
+    scales,
+    cli

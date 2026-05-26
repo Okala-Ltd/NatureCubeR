@@ -69,13 +69,12 @@ auth_headers <- function(api_key, okala_url="https://naturecube.io/api"){
 #' @author
 #' Adam Varley
 #' @export
-auth_headers_dev <- function(api_key, okala_url="https://dev.api.dashboard.okala.io/api/"){
+auth_headers_sit <- function(api_key, okala_url="https://sit.naturecube.io/api"){
   root <- httr2::request(okala_url)
   d = list(key=api_key,
            root=root)
   return(d)
 }
-
 
 #' @title Get Project Information
 #'
@@ -96,7 +95,7 @@ auth_headers_dev <- function(api_key, okala_url="https://dev.api.dashboard.okala
 #' @author
 #' Adam Varley
 #' @export
-get_project <- function(hdr=headers){
+get_project <- function(hdr){
   urlreq_ap <- httr2::req_url_path_append(hdr$root,"getProject",hdr$key)
   preq <- httr2::req_perform(urlreq_ap)
   resp_str <- httr2::resp_body_json(preq)
@@ -124,6 +123,7 @@ get_project <- function(hdr=headers){
 #' @export
 get_station_info <- function(hdr,
                              datatype=c("video","audio","image","eDNA")){
+
   urlreq_ap <- httr2::req_url_path_append(hdr$root,"getStations",datatype,hdr$key)
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_string(preq)
@@ -178,31 +178,64 @@ plot_stations <- function(geojson_response){
 #'
 #' @param hdr A base URL provided and valid API key returned by the function \link{auth_headers}
 #' @param datatype A character vector of data types c("video","audio","image","eDNA")
-#' @param psrID Unique project system ID for which the media assets will be retrieved
+#' @param station_ids An sf/data frame of stations as returned by \link{get_station_info}, containing columns \code{project_system_record_id} and \code{record_count}
+#' @param limit Integer. Number of records to fetch per API request (default 1000).
 #'
-#' @return A tibble of media assets for the specified project system record
+#' @return A tibble of media assets for the specified stations
 #'
 #' @examples
 #' \dontrun{
-#'   assets <- get_media_assets(headers, datatype="video", psrID=123)
+#'   assets <- get_media_assets(headers, datatype="video", station_ids=stations[1:5, ])
 #' }
 #'
 #' @author
 #' Adam Varley
 #' @export
-get_media_assets <- function(hdr,
-                             datatype=c("video","audio","image","eDNA"),
-                             psrID){
 
-  urlreq_ap <- httr2::req_url_path_append(hdr$root,"getMediaAssets",datatype,hdr$key) %>%
-    httr2::req_method("POST") %>% httr2::req_body_json(data=psrID)
 
-  preq <- httr2::req_perform(urlreq_ap,verbosity=3)
-  resp <- httr2::resp_body_string(preq)
+get_media_assets <- function(hdr, 
+                              datatype = c("video", "audio", "image", "eDNA"), 
+                              station_ids,
+                              limit = 1000) {
+  
+  all_results <- list()
+  offset      <- 0
+  psrID       <- station_ids$project_system_record_id
 
-  return(jsonlite::fromJSON(resp) %>% tibble::as_tibble())
+  if (sum(station_ids$record_count) > 4000){
+    cat("Total number of records greater than 4000, please run it in chunks")
+  }
+
+  pb <- cli::cli_progress_bar(
+    format      = "Fetching media assets | {cli::pb_current} records | [{cli::pb_bar}] {cli::pb_percent} | ETA {cli::pb_eta}",
+    total       = sum(station_ids$record_count),
+    clear       = FALSE
+  )
+
+  repeat {
+    urlreq_ap <- httr2::req_url_path_append(hdr$root, "getMediaAssets", datatype, hdr$key) %>% 
+      httr2::req_method("POST") %>% 
+      httr2::req_url_query(offset = offset, limit = limit) %>% 
+      httr2::req_body_json(data = as.list(psrID))
+
+    resp <- httr2::req_perform(urlreq_ap) %>% 
+      httr2::resp_body_string() %>% 
+      jsonlite::fromJSON()
+    
+    batch <- tibble::as_tibble(resp)
+    all_results[[length(all_results) + 1]] <- batch
+    offset <- offset + nrow(batch)
+
+    cli::cli_progress_update(id = pb, inc = nrow(batch))
+    Sys.sleep(0.5)
+
+    if (nrow(batch) < limit) break
+  }
+  cli::cli_progress_done(id = pb)
+  dplyr::bind_rows(all_results)
 
 }
+
 
 
 
@@ -255,7 +288,7 @@ get_project_labels <- function(hdr,
 add_project_labels <- function(hdr,
                                labeltype = c('Bioacoustic','Camera'),labels){
   urlreq_ap <- httr2::req_url_path_append(hdr$root,"addProjectLabels",labeltype,hdr$key)
-  urlreq_ap <- urlreq_ap |>  httr2::req_method("POST") |> httr2::req_body_json(data=labels)
+  urlreq_ap <- urlreq_ap  %>%   httr2::req_method("POST") |> httr2::req_body_json(data=labels)
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_json(preq)
 
@@ -349,7 +382,7 @@ add_IUCN_labels <- function(hdr,labels,chunksize){
     sub <- spl.dt[[i]]
 
     urlreq_ap <- httr2::req_url_path_append(hdr$root,"addIUCNLabels",hdr$key)
-    urlreq_ap <- urlreq_ap |>  httr2::req_method("POST") |> httr2::req_body_json(data=spl.dt[[i]])
+    urlreq_ap <- urlreq_ap  %>%   httr2::req_method("POST")  %>%  httr2::req_body_json(data=spl.dt[[i]])
 
     preq <- httr2::req_perform(urlreq_ap,verbosity=3)
     resp <- httr2::resp_body_json(preq)
@@ -368,7 +401,7 @@ sendupatedlabels <- function(hdr,datachunk) {
   datachunk = jsonlite::toJSON(datachunk,pretty=TRUE)
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root,"updateSegmentLabels", hdr$key)
-  urlreq_ap <- urlreq_ap |>  httr2::req_method("PUT")  |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
+  urlreq_ap <- urlreq_ap  %>%   httr2::req_method("PUT")   %>%  httr2::req_body_json(jsonlite::fromJSON(datachunk))
   #
   preq <- httr2::req_perform(urlreq_ap,verbosity=3)
   resp <- httr2::resp_body_string(preq)
@@ -420,7 +453,7 @@ send_media_chunks <- function(hdr, datachunk) {
     datachunk = jsonlite::toJSON(datachunk,pretty=TRUE)
 
     urlreq_ap <- httr2::req_url_path_append(hdr$root,"updateTimestamps", hdr$key)
-    urlreq_ap <- urlreq_ap |>  httr2::req_method("PUT")  |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
+    urlreq_ap <- urlreq_ap  %>%   httr2::req_method("PUT")  %>%  httr2::req_body_json(jsonlite::fromJSON(datachunk))
     #
     preq <- httr2::req_perform(urlreq_ap,verbosity=3)
     resp <- httr2::resp_body_string(preq)

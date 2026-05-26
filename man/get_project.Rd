@@ -4,7 +4,7 @@
 \alias{get_project}
 \title{Get Project Information}
 \usage{
-get_project(hdr = headers)
+get_project(hdr)
 }
 \arguments{
 \item{hdr}{A list containing the root URL and API key, as returned by \link{auth_headers}.}

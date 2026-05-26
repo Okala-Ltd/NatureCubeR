@@ -4,4 +4,6 @@
 #'
 #' @docType package
 #' @name okalaR
+#' @importFrom magrittr %>%
+#' @importFrom dplyr bind_rows
 NULL
