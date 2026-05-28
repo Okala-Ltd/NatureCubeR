@@ -236,9 +236,6 @@ get_media_assets <- function(hdr,
 
 }
 
-
-
-
 #' @title Get project labels for either bioacoustics or camera
 #'
 #' @description
