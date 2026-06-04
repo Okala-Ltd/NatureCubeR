@@ -370,7 +370,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
   } else {
 
     if (chunksize > nrow(labels)) {
-      message('chunksize is bigger than length of data altering chunkszie to ', nrow(labels))
+      message('chunksize is bigger than length of data altering chunksize to ', nrow(labels))
       chunksize <- nrow(labels) / 2
     } else {
       spl.dt <- split(labels, cut(seq_len(nrow(labels)), round(nrow(labels) / chunksize)))
@@ -430,7 +430,7 @@ sendupatedlabels <- function(hdr, datachunk) {
 push_new_labels <- function(hdr, submission_records, chunksize) {
 
   if (chunksize > nrow(submission_records)) {
-    message('chunksize is bigger than length of data altering chunkszie to ', nrow(submission_records))
+    message('chunksize is bigger than length of data altering chunksize to ', nrow(submission_records))
     chunksize <- nrow(submission_records)
   }
 
@@ -640,7 +640,7 @@ update_media_timestamps <- function(hdr, media_records) {
 #' @export
 push_new_timestamps <- function(hdr, media_metadata, chunksize) {
   if (chunksize > nrow(media_metadata)) {
-    message('chunksize is bigger than length of data altering chunkszie to ', nrow(media_metadata))
+    message('chunksize is bigger than length of data altering chunksize to ', nrow(media_metadata))
     chunksize <- nrow(media_metadata)
   }
 
