@@ -3,8 +3,7 @@ source('R/api.R')
 # Your api key is found in your project settings on the Okala dashboard.
 # You can find the Okala dashboard here: https://dashboard.okala.io/
 
-api_key <- Sys.getenv("OKALA_API_KEY")
-if (api_key == "") stop("OKALA_API_KEY environment variable not set.")
+api_key <- get_key()
 # Set auth headers appropriately
 headers <- auth_headers(api_key,okala_url="https://api.dashboard.okala.io/api/")
 

@@ -4,7 +4,7 @@
 \alias{auth_headers}
 \title{Initiate root URL with API key}
 \usage{
-auth_headers(api_key, okala_url = "https://api.dashboard.okala.io/api/")
+auth_headers(api_key, okala_url = "https://naturecube.io/api")
 }
 \arguments{
 \item{api_key}{A valid API key}

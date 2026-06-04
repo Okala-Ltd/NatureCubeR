@@ -3,22 +3,23 @@ source('R/api.R')
 # Your api key is found in your project settings on the Okala dashboard.
 # You can find the Okala dashboard here: https://dashboard.okala.io/
 
-api_key <- 'you_api' # Replace with your actual API key
+api_key <- get_key()
 # Set auth headers appropriately
-headers <- auth_headers(api_key,okala_url="https://dev.api.dashboard.okala.io/api/")
+headers <- auth_headers(api_key,okala_url="http://localhost:8000/api")
 
 # Way to see the project you are pulling and confirm api key is correct
 get_project(hdr=headers)
 
+
 # Get station information for videos in the project and there corresponding IDs
-stations <- get_station_info(hdr=headers,datatype="video")
+stations <- get_station_info(hdr=headers,datatype="image")
 
 plot_stations(stations)
 
 # Get media lables for a list of sensors
 media_labels <- get_media_assets(hdr=headers,
-                                 datatype="video",
-                                 psrID=stations$project_system_record_id)
+                                 datatype="image",
+                                 station_ids=stations)
 
 # Get project labels for the project
 project_camera_labels <- get_project_labels(hdr=headers,labeltype='Camera')
@@ -45,6 +46,8 @@ example_data$iucn_redlist_status <- gsub('Conservation Dependent', 'Not Evaluate
 add_IUCN_labels(hdr=headers,labels=example_data,chunksize = 500)
 
 # Update existing labels on the platform
+
+missing_labels <- dplyr::filter(media_labels, is.na(label))
 
 data.frame()
 media_labels[1,]

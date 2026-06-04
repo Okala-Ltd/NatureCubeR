@@ -20,8 +20,7 @@ This tutorial demonstrates how to update media file timestamps using the `okalaR
 Your API key is found in your project settings on the Okala dashboard: [https://dashboard.okala.io/](https://dashboard.okala.io/)
 
 ```{r auth, eval=FALSE}
-api_key <- Sys.getenv("OKALA_API_KEY")
-if (api_key == "") stop("OKALA_API_KEY environment variable not set.")
+api_key <- get_key()
 headers <- auth_headers(api_key, okala_url = "https://api.dashboard.okala.io/api/")
 ```
 
