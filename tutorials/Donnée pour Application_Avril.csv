@@ -1,0 +1,79 @@
+﻿phone_model,phone_operating_system,username,system_name,procedure_name,procedure_type,project_id_fk,battery_level,feature_uuid,procedure_start_timestamp,procedure_end_timestamp,field_feature_record_uploaded_at,geometry,longitude,latitude,observation_id,item_uuid,item_name,recorded_at,uploaded_at,observation_type,numbers,data
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703612,0.931838,,,,15/04/2026 08:39,,git switch uploadde,,Myrianthus
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703612,0.931838,,,,15/04/2026 08:39,,text,,Oboba
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703821,0.93174,,,,15/04/2026 08:58,,label,,Elaeis guineensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703821,0.93174,,,,15/04/2026 08:58,,text,,Palmier a  huile
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703601,0.931959,,,,15/04/2026 09:04,,label,,
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703601,0.931959,,,,15/04/2026 09:04,,text,,Coarsa
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703642,0.932184,,,,15/04/2026 09:09,,label,,Antrocaryon Klaineanum
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703642,0.932184,,,,15/04/2026 09:09,,text,,Onzabili
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703642,0.932429,,,,15/04/2026 09:12,,label,,Antrocaryon Klaineanum
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703642,0.932429,,,,15/04/2026 09:12,,text,,Onzabili
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703609,0.932541,,,,15/04/2026 09:15,,label,,Antrocaryon Klaineanum
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703609,0.932541,,,,15/04/2026 09:15,,text,,Onzabili
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703896,0.933432,,,,15/04/2026 09:28,,label,,Trichoscypha Acuminata
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703896,0.933432,,,,15/04/2026 09:28,,text,,Amvout
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703978,0.933241,,,,15/04/2026 09:31,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703978,0.933241,,,,15/04/2026 09:31,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703981,0.933227,,,,15/04/2026 09:34,,label,,piptadeniastrum africanum
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703981,0.933227,,,,15/04/2026 09:34,,text,,Dabema
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703953,0.933235,,,,15/04/2026 09:35,,label,,pentaclethra  macrophylla
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703953,0.933235,,,,15/04/2026 09:35,,text,,mubala
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704295,0.933299,,,,15/04/2026 09:38,,label,,Trichoscypha Acuminata
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704295,0.933299,,,,15/04/2026 09:38,,text,,Amvout
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704799,0.933584,,,,15/04/2026 09:41,,label,,Trichoscypha Acuminata
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704799,0.933584,,,,15/04/2026 09:41,,text,,Amvout
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704726,0.933861,,,,15/04/2026 09:43,,label,,Dacryodes Buettneri
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704726,0.933861,,,,15/04/2026 09:43,,text,,Ozigo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704607,0.934002,,,,15/04/2026 09:46,,label,,Antrocaryon Klaineanum
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704607,0.934002,,,,15/04/2026 09:46,,text,,Onzabili
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704494,0.933932,,,,15/04/2026 09:48,,label,,Dacryodes Buettneri
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704494,0.933932,,,,15/04/2026 09:48,,text,,Ozigo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704474,0.933915,,,,15/04/2026 09:50,,label,,Diania cactiformis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704474,0.933915,,,,15/04/2026 09:50,,text,,Diania
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704427,0.933838,,,,15/04/2026 09:51,,label,,Diania cactiformis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704427,0.933838,,,,15/04/2026 09:51,,text,,Diania 
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704456,0.933736,,,,15/04/2026 09:52,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704456,0.933736,,,,15/04/2026 09:52,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704379,0.933737,,,,15/04/2026 09:53,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704379,0.933737,,,,15/04/2026 09:53,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704296,0.933793,,,,15/04/2026 09:54,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704296,0.933793,,,,15/04/2026 09:54,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704321,0.934082,,,,15/04/2026 09:56,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704321,0.934082,,,,15/04/2026 09:56,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704231,0.934067,,,,15/04/2026 09:57,,label,,Irvineia voltae
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704231,0.934067,,,,15/04/2026 09:57,,text,,Eveuss
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703904,0.934228,,,,15/04/2026 10:00,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703904,0.934228,,,,15/04/2026 10:00,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703879,0.934276,,,,15/04/2026 10:02,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703879,0.934276,,,,15/04/2026 10:02,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703703,0.93455,,,,15/04/2026 10:04,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703703,0.93455,,,,15/04/2026 10:04,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703674,0.934743,,,,15/04/2026 10:07,,label,,Cylicodiscus gabunensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703674,0.934743,,,,15/04/2026 10:07,,text,,Okane
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703641,0.934683,,,,15/04/2026 10:09,,label,,Dacryodes Buettneri
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703641,0.934683,,,,15/04/2026 10:09,,text,,Ozigo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704872,0.933184,,,,15/04/2026 10:50,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704872,0.933184,,,,15/04/2026 10:50,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704832,0.933091,,,,15/04/2026 10:52,,label,,Uapaca guineensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704832,0.933091,,,,15/04/2026 10:52,,text,,Rikio
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.705001,0.933129,,,,15/04/2026 10:57,,label,,Uapaca guineensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.705001,0.933129,,,,15/04/2026 10:57,,text,,Rikio
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704521,0.932786,,,,15/04/2026 11:21,,label,,Trichoscypha Acuminata
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704521,0.932786,,,,15/04/2026 11:21,,text,,Amvout
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704407,0.932972,,,,15/04/2026 11:23,,label,,Myrianthus
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704407,0.932972,,,,15/04/2026 11:23,,text,,Oboba
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.7043,0.93285,,,,15/04/2026 11:25,,label,,Santiria Trimera
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.7043,0.93285,,,,15/04/2026 11:25,,text,,Ebo
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.70422,0.932762,,,,15/04/2026 11:27,,label,,Diania cactiformis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.70422,0.932762,,,,15/04/2026 11:27,,text,,Diania 
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703998,0.93241,,,,15/04/2026 11:29,,label,,Pycnanthus angolensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703998,0.93241,,,,15/04/2026 11:29,,text,,Ilomba
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704275,0.932164,,,,15/04/2026 11:32,,label,,Antrocaryon Klaineanum
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704275,0.932164,,,,15/04/2026 11:32,,text,,Onzabili
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704183,0.932141,,,,15/04/2026 11:34,,label,,Myrianthus
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704183,0.932141,,,,15/04/2026 11:34,,text,,Oboba
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703792,0.931451,,,,15/04/2026 11:39,,label,,Elaeis guineensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.703792,0.931451,,,,15/04/2026 11:39,,text,,Palmier a  huile
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704095,0.931367,,,,15/04/2026 11:41,,label,,Elaeis guineensis
+,,,Plante Ivindo,Arbre ,Field observation,,,,,,,,13.704095,0.931367,,,,15/04/2026 11:41,,text,,Palmier a  huile
