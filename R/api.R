@@ -437,7 +437,7 @@ push_new_labels <- function(hdr, submission_records, chunksize) {
   spl.dt <- split(submission_records, cut(seq_len(nrow(submission_records)), round(nrow(submission_records) / chunksize)))
   for (i in seq_along(spl.dt)) {
 
-    sendupatedlabels(hdr, datachunk = spl.dt[[i]])
+    send_updated_labels(hdr, datachunk = spl.dt[[i]])
     message('submitted ', i * chunksize, ' labels of ', nrow(submission_records))
   }
 }
