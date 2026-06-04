@@ -16,6 +16,11 @@ phone_types <- c(
 "instruction"
 )
 
+# Internal null-coalescing helper.
+`%||%` <- function(x, y) {
+  if (is.null(x)) y else x
+}
+
 #' @title Build Device Settings
 #'
 #' @description
@@ -469,6 +474,595 @@ return(list(
   valid = length(errors) == 0,
   errors = errors
 ))
+}
+
+
+#' @title Get Project Schema
+#'
+#' @description
+#' Retrieves the project schema (codebook) used to populate `project_system_id`,
+#' `procedure_id`, and valid item UUIDs for observation uploads.
+#'
+#' @param hdr A base URL and API key returned by \link{auth_headers} or
+#'   \link{auth_headers_dev}.
+#'
+#' @return A parsed JSON list containing the project schema.
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   schema <- get_project_schema(hdr)
+#' }
+#'
+#' @author Adam Varley
+#' @export
+get_project_schema <- function(hdr) {
+  urlreq <- httr2::req_url_path_append(hdr$root, "getProjectSchema", hdr$key)
+  response <- httr2::req_perform(urlreq)
+  return(httr2::resp_body_json(response))
+}
+
+
+#' @title Build Upload Observation
+#'
+#' @description
+#' Builds a single observation payload for the `uploadObservations` endpoint,
+#' where `values` is keyed by item UUID.
+#'
+#' @param schema List. Project schema returned by \code{get_project_schema()}.
+#' @param values Named list/vector of values keyed by item UUID.
+#' @param recorded_at Character or POSIXct. Timestamp in ISO-8601 format,
+#'   e.g. `"2024-06-01T09:00:00Z"`.
+#' @param lon Numeric longitude.
+#' @param lat Numeric latitude.
+#' @param system_index Integer index of the system in schema$systems. Default `1`.
+#' @param procedure_index Integer index of the procedure in selected system.
+#'   Default `1`.
+#'
+#' @return A named list representing one observation row for upload.
+#'
+#' @examples
+#' \dontrun{
+#'   schema <- get_project_schema(hdr)
+#'   obs <- build_upload_observation(
+#'     schema = schema,
+#'     values = list("item-uuid-here" = "Roe Deer"),
+#'     recorded_at = "2024-06-01T09:00:00Z",
+#'     lon = -1.543,
+#'     lat = 51.761
+#'   )
+#' }
+#'
+#' @author Adam Varley
+#' @export
+build_upload_observation <- function(schema,
+                                     values,
+                                     recorded_at,
+                                     lon,
+                                     lat,
+                                     system_index = 1,
+                                     procedure_index = 1) {
+
+  if (missing(schema) || is.null(schema)) {
+    stop("schema is required")
+  }
+
+  if (missing(values) || is.null(values) || length(values) == 0) {
+    stop("values must be a non-empty named list or vector keyed by item UUID")
+  }
+
+  if (is.null(names(values)) || any(names(values) == "")) {
+    stop("values must be named with item UUID keys")
+  }
+
+  if (missing(recorded_at) || is.null(recorded_at)) {
+    stop("recorded_at is required")
+  }
+
+  if (inherits(recorded_at, "POSIXt")) {
+    recorded_at <- format(recorded_at, "%Y-%m-%dT%H:%M:%SZ")
+  } else {
+    recorded_at <- as.character(recorded_at)
+  }
+
+  if (missing(lon) || !is.numeric(lon) || length(lon) != 1) {
+    stop("lon must be a single numeric value")
+  }
+
+  if (missing(lat) || !is.numeric(lat) || length(lat) != 1) {
+    stop("lat must be a single numeric value")
+  }
+
+  if (is.null(schema$systems) || length(schema$systems) < system_index) {
+    stop("system_index is out of bounds for schema$systems")
+  }
+
+  system <- schema$systems[[system_index]]
+  if (is.null(system$procedures) || length(system$procedures) < procedure_index) {
+    stop("procedure_index is out of bounds for selected system$procedures")
+  }
+
+  procedure <- system$procedures[[procedure_index]]
+
+  return(list(
+    project_system_id = system$project_system_id,
+    procedure_id = procedure$procedure_id,
+    recorded_at = recorded_at,
+    lon = as.numeric(lon),
+    lat = as.numeric(lat),
+    values = as.list(values)
+  ))
+}
+
+
+#' @title Upload Observations
+#'
+#' @description
+#' Uploads one or more observations to the `uploadObservations` endpoint.
+#'
+#' @param hdr A base URL and API key returned by \link{auth_headers} or
+#'   \link{auth_headers_dev}.
+#' @param observations List of observations created with
+#'   \code{build_upload_observation()}.
+#'
+#' @return Parsed API response as a list.
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   schema <- get_project_schema(hdr)
+#'   obs <- build_upload_observation(
+#'     schema = schema,
+#'     values = list("item-uuid-here" = "Roe Deer"),
+#'     recorded_at = "2024-06-01T09:00:00Z",
+#'     lon = -1.543,
+#'     lat = 51.761
+#'   )
+#'   resp <- upload_observations(hdr, list(obs))
+#' }
+#'
+#' @author Adam Varley
+#' @export
+upload_observations <- function(hdr, observations) {
+
+  if (missing(observations) || is.null(observations) || length(observations) == 0) {
+    stop("observations must be a non-empty list")
+  }
+
+  urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) |>
+    httr2::req_method("POST") |>
+    httr2::req_body_json(list(observations = observations))
+
+  response <- httr2::req_perform(urlreq)
+  return(httr2::resp_body_json(response))
+}
+
+
+# Internal helper to normalize lookup strings.
+normalize_lookup_value <- function(x) {
+  out <- tolower(trimws(as.character(x)))
+  out <- iconv(out, from = "", to = "ASCII//TRANSLIT")
+  out[is.na(out)] <- ""
+  return(out)
+}
+
+
+# Internal helper to recursively collect all item-like nodes from a procedure.
+collect_item_nodes <- function(x, out = list()) {
+  if (!is.list(x)) {
+    return(out)
+  }
+
+  if (!is.null(x$item_uuid)) {
+    out[[length(out) + 1]] <- x
+  }
+
+  if (is.null(names(x))) {
+    for (i in seq_along(x)) {
+      out <- collect_item_nodes(x[[i]], out)
+    }
+  } else {
+    for (nm in names(x)) {
+      out <- collect_item_nodes(x[[nm]], out)
+    }
+  }
+
+  return(out)
+}
+
+
+# Internal helper to create an item dictionary from schema for a selected procedure.
+get_schema_item_dictionary <- function(schema, system_index = 1, procedure_index = 1) {
+  if (is.null(schema$systems) || length(schema$systems) < system_index) {
+    stop("system_index is out of bounds for schema$systems")
+  }
+
+  system <- schema$systems[[system_index]]
+  if (is.null(system$procedures) || length(system$procedures) < procedure_index) {
+    stop("procedure_index is out of bounds for selected system$procedures")
+  }
+
+  procedure <- system$procedures[[procedure_index]]
+  item_nodes <- collect_item_nodes(procedure)
+
+  if (length(item_nodes) == 0) {
+    return(data.frame(
+      item_uuid = character(),
+      item_name = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  rows <- lapply(item_nodes, function(node) {
+    item_name <- node$item_name
+    if (is.null(item_name) || identical(item_name, "")) item_name <- node$name
+    if (is.null(item_name) || identical(item_name, "")) item_name <- node$label
+    if (is.null(item_name) || identical(item_name, "")) item_name <- node$title
+
+    data.frame(
+      item_uuid = as.character(node$item_uuid),
+      item_name = as.character(item_name %||% ""),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  dictionary <- do.call(rbind, rows)
+  dictionary <- dictionary[dictionary$item_uuid != "", , drop = FALSE]
+  dictionary <- dictionary[!duplicated(dictionary$item_uuid), , drop = FALSE]
+  rownames(dictionary) <- NULL
+  return(dictionary)
+}
+
+
+# Internal helper to resolve system/procedure indices from schema and optional names.
+resolve_schema_indices <- function(schema,
+                                   system_index = NULL,
+                                   procedure_index = NULL,
+                                   system_name = NULL,
+                                   procedure_name = NULL) {
+  if (is.null(schema$systems) || length(schema$systems) == 0) {
+    stop("schema does not contain any systems")
+  }
+
+  if (is.null(system_index)) {
+    if (!is.null(system_name) && nzchar(system_name)) {
+      system_names <- vapply(
+        schema$systems,
+        function(x) as.character(x$system_name %||% ""),
+        character(1)
+      )
+      match_idx <- which(normalize_lookup_value(system_names) == normalize_lookup_value(system_name))[1]
+      if (is.na(match_idx)) {
+        stop("system_name was provided but not found in schema")
+      }
+      system_index <- match_idx
+    } else {
+      system_index <- 1
+    }
+  }
+
+  if (length(schema$systems) < system_index) {
+    stop("system_index is out of bounds for schema$systems")
+  }
+
+  procedures <- schema$systems[[system_index]]$procedures
+  if (is.null(procedures) || length(procedures) == 0) {
+    stop("selected system does not contain any procedures")
+  }
+
+  if (is.null(procedure_index)) {
+    if (!is.null(procedure_name) && nzchar(procedure_name)) {
+      procedure_names <- vapply(
+        procedures,
+        function(x) as.character(x$procedure_name %||% ""),
+        character(1)
+      )
+      match_idx <- which(normalize_lookup_value(procedure_names) == normalize_lookup_value(procedure_name))[1]
+      if (is.na(match_idx)) {
+        stop("procedure_name was provided but not found in schema for selected system")
+      }
+      procedure_index <- match_idx
+    } else {
+      procedure_index <- 1
+    }
+  }
+
+  if (length(procedures) < procedure_index) {
+    stop("procedure_index is out of bounds for selected system$procedures")
+  }
+
+  return(list(system_index = system_index, procedure_index = procedure_index))
+}
+
+
+#' @title Build Upload Observations From Table
+#'
+#' @description
+#' Converts a flat data frame into a list of observations for
+#' \code{upload_observations()}, automatically resolving item UUIDs from
+#' project schema when needed.
+#'
+#' @param data Data frame of observation rows.
+#' @param schema Project schema returned by \code{get_project_schema()}.
+#' @param system_index Integer index of target system in schema. Optional.
+#' @param procedure_index Integer index of target procedure in selected system.
+#'   Optional.
+#' @param system_name Character system name used to resolve system index.
+#'   Optional.
+#' @param procedure_name Character procedure name used to resolve procedure
+#'   index. Optional.
+#' @param lon_col Character name of longitude column. Default `"longitude"`.
+#' @param lat_col Character name of latitude column. Default `"latitude"`.
+#' @param recorded_at_col Character name of recorded timestamp column.
+#'   Default `"recorded_at"`.
+#' @param item_uuid_col Character name of item UUID column.
+#'   Default `"item_uuid"`.
+#' @param item_name_col Character name of item name column.
+#'   Default `"item_name"`.
+#' @param value_col Character name of primary value column. Default `"data"`.
+#' @param numeric_value_col Character name of numeric fallback value column.
+#'   Default `"numbers"`.
+#' @param observation_id_col Character name of observation ID column.
+#'   Default `"observation_id"`.
+#' @param recorded_at_format Optional timestamp parsing format.
+#'   Default `"%d/%m/%Y %H:%M"`.
+#' @param timezone Timezone used when parsing non-ISO timestamps. Default `"UTC"`.
+#'
+#' @return A list with `observations`, `unresolved_rows`, `resolved_rows`, and
+#'   schema selection metadata.
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   schema <- get_project_schema(hdr)
+#'   df <- read.csv("tutorials/example_observation_data .csv", stringsAsFactors = FALSE)
+#'   built <- build_upload_observations_from_table(
+#'     data = df,
+#'     schema = schema,
+#'     system_name = "Plante Ivindo",
+#'     procedure_name = "Arbre"
+#'   )
+#' }
+#'
+#' @author Adam Varley
+#' @export
+build_upload_observations_from_table <- function(data,
+                                                 schema,
+                                                 system_index = NULL,
+                                                 procedure_index = NULL,
+                                                 system_name = NULL,
+                                                 procedure_name = NULL,
+                                                 lon_col = "longitude",
+                                                 lat_col = "latitude",
+                                                 recorded_at_col = "recorded_at",
+                                                 item_uuid_col = "item_uuid",
+                                                 item_name_col = "item_name",
+                                                 value_col = "data",
+                                                 numeric_value_col = "numbers",
+                                                 observation_id_col = "observation_id",
+                                                 recorded_at_format = "%d/%m/%Y %H:%M",
+                                                 timezone = "UTC") {
+
+  if (!is.data.frame(data) || nrow(data) == 0) {
+    stop("data must be a non-empty data frame")
+  }
+
+  required_cols <- c(lon_col, lat_col, recorded_at_col)
+  missing_cols <- setdiff(required_cols, names(data))
+  if (length(missing_cols) > 0) {
+    stop("Missing required columns in data: ", paste(missing_cols, collapse = ", "))
+  }
+
+  idx <- resolve_schema_indices(
+    schema = schema,
+    system_index = system_index,
+    procedure_index = procedure_index,
+    system_name = system_name,
+    procedure_name = procedure_name
+  )
+
+  dictionary <- get_schema_item_dictionary(
+    schema = schema,
+    system_index = idx$system_index,
+    procedure_index = idx$procedure_index
+  )
+
+  data <- data
+  data[[item_uuid_col]] <- as.character(data[[item_uuid_col]] %||% "")
+  data[[item_name_col]] <- as.character(data[[item_name_col]] %||% "")
+  data[[value_col]] <- as.character(data[[value_col]] %||% "")
+
+  if (!numeric_value_col %in% names(data)) {
+    data[[numeric_value_col]] <- NA
+  }
+
+  if (!observation_id_col %in% names(data)) {
+    data[[observation_id_col]] <- ""
+  }
+
+  name_lookup <- stats::setNames(
+    dictionary$item_uuid,
+    normalize_lookup_value(dictionary$item_name)
+  )
+
+  resolved_from_name <- name_lookup[normalize_lookup_value(data[[item_name_col]])]
+  resolved_from_name[is.na(resolved_from_name)] <- ""
+
+  explicit_uuid <- trimws(data[[item_uuid_col]])
+  explicit_uuid[is.na(explicit_uuid)] <- ""
+
+  data$.resolved_item_uuid <- ifelse(explicit_uuid != "", explicit_uuid, resolved_from_name)
+
+  has_value <- trimws(data[[value_col]]) != ""
+  numeric_values <- data[[numeric_value_col]]
+  has_numeric <- !is.na(numeric_values) & as.character(numeric_values) != ""
+
+  unresolved_mask <- trimws(data$.resolved_item_uuid) == ""
+  empty_value_mask <- !(has_value | has_numeric)
+
+  valid_rows <- data[!(unresolved_mask | empty_value_mask), , drop = FALSE]
+
+  if (nrow(valid_rows) == 0) {
+    stop("No rows could be converted into observations. Check item UUID/name mapping and values.")
+  }
+
+  timestamp_raw <- as.character(valid_rows[[recorded_at_col]])
+  timestamp_parsed <- as.POSIXct(timestamp_raw, format = recorded_at_format, tz = timezone)
+  iso_timestamp <- ifelse(
+    !is.na(timestamp_parsed),
+    format(timestamp_parsed, "%Y-%m-%dT%H:%M:%SZ"),
+    timestamp_raw
+  )
+
+  lon_vals <- as.numeric(valid_rows[[lon_col]])
+  lat_vals <- as.numeric(valid_rows[[lat_col]])
+
+  obs_ids <- as.character(valid_rows[[observation_id_col]])
+  obs_ids[is.na(obs_ids)] <- ""
+
+  grouping_key <- ifelse(
+    trimws(obs_ids) != "",
+    paste0("obs-id::", trimws(obs_ids)),
+    paste0("coord-time::", round(lon_vals, 7), "::", round(lat_vals, 7), "::", iso_timestamp)
+  )
+
+  split_rows <- split(valid_rows, grouping_key)
+
+  observations <- lapply(split_rows, function(chunk) {
+    chunk_values <- list()
+
+    for (r in seq_len(nrow(chunk))) {
+      row <- chunk[r, , drop = FALSE]
+      item_uuid <- as.character(row$.resolved_item_uuid[[1]])
+      value_text <- trimws(as.character(row[[value_col]][[1]] %||% ""))
+      value_num <- row[[numeric_value_col]][[1]]
+
+      value_to_use <- value_text
+      if (identical(value_to_use, "") && !is.na(value_num) && as.character(value_num) != "") {
+        value_to_use <- as.numeric(value_num)
+      }
+
+      chunk_values[[item_uuid]] <- value_to_use
+    }
+
+    recorded_at_value <- as.character(chunk[[recorded_at_col]][[1]])
+    recorded_at_parsed <- as.POSIXct(recorded_at_value, format = recorded_at_format, tz = timezone)
+    if (!is.na(recorded_at_parsed)) {
+      recorded_at_value <- format(recorded_at_parsed, "%Y-%m-%dT%H:%M:%SZ")
+    }
+
+    build_upload_observation(
+      schema = schema,
+      values = chunk_values,
+      recorded_at = recorded_at_value,
+      lon = as.numeric(chunk[[lon_col]][[1]]),
+      lat = as.numeric(chunk[[lat_col]][[1]]),
+      system_index = idx$system_index,
+      procedure_index = idx$procedure_index
+    )
+  })
+
+  unresolved_rows <- data[unresolved_mask, c(item_name_col, item_uuid_col), drop = FALSE]
+
+  return(list(
+    observations = observations,
+    resolved_rows = nrow(valid_rows),
+    unresolved_rows = unresolved_rows,
+    system_index = idx$system_index,
+    procedure_index = idx$procedure_index
+  ))
+}
+
+
+#' @title Upload Observations From CSV
+#'
+#' @description
+#' One-call workflow to read a CSV file, fetch schema, build observations, and
+#' upload to `uploadObservations`.
+#'
+#' @param hdr A base URL and API key returned by \link{auth_headers} or
+#'   \link{auth_headers_dev}.
+#' @param csv_path Path to CSV containing observation rows.
+#' @param system_name Character system name used to resolve schema system.
+#'   Optional.
+#' @param procedure_name Character procedure name used to resolve procedure.
+#'   Optional.
+#' @param system_index Integer system index fallback. Default `NULL`.
+#' @param procedure_index Integer procedure index fallback. Default `NULL`.
+#' @param dry_run Logical; if `TRUE`, returns built observations without
+#'   uploading. Default `FALSE`.
+#' @param ... Additional arguments passed to
+#'   \code{build_upload_observations_from_table()}.
+#'
+#' @return A list with built observations summary and API response when uploaded.
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   result <- upload_observations_from_csv(
+#'     hdr = hdr,
+#'     csv_path = "tutorials/example_observation_data .csv",
+#'     system_name = "Plante Ivindo",
+#'     procedure_name = "Arbre",
+#'     dry_run = TRUE
+#'   )
+#' }
+#'
+#' @author Adam Varley
+#' @export
+upload_observations_from_csv <- function(hdr,
+                                         csv_path,
+                                         system_name = NULL,
+                                         procedure_name = NULL,
+                                         system_index = NULL,
+                                         procedure_index = NULL,
+                                         dry_run = FALSE,
+                                         ...) {
+  if (missing(csv_path) || is.null(csv_path) || !file.exists(csv_path)) {
+    stop("csv_path must exist")
+  }
+
+  observation_data <- utils::read.csv(
+    csv_path,
+    stringsAsFactors = FALSE,
+    check.names = FALSE,
+    fileEncoding = "UTF-8"
+  )
+
+  schema <- get_project_schema(hdr)
+
+  built <- build_upload_observations_from_table(
+    data = observation_data,
+    schema = schema,
+    system_name = system_name,
+    procedure_name = procedure_name,
+    system_index = system_index,
+    procedure_index = procedure_index,
+    ...
+  )
+
+  if (isTRUE(dry_run)) {
+    return(list(
+      uploaded = FALSE,
+      observations = built$observations,
+      resolved_rows = built$resolved_rows,
+      unresolved_rows = built$unresolved_rows,
+      system_index = built$system_index,
+      procedure_index = built$procedure_index
+    ))
+  }
+
+  response <- upload_observations(hdr = hdr, observations = built$observations)
+
+  return(list(
+    uploaded = TRUE,
+    response = response,
+    observations = built$observations,
+    resolved_rows = built$resolved_rows,
+    unresolved_rows = built$unresolved_rows,
+    system_index = built$system_index,
+    procedure_index = built$procedure_index
+  ))
 }
 
 

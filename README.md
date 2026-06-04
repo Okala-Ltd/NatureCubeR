@@ -27,6 +27,39 @@ library(OkalaR)
 
 For more detailed examples, see the [`tutorials/`](tutorials/) folder, which contains scripts demonstrating typical workflows.
 
+## Observation Upload From CSV
+
+The package now includes a low-friction workflow for `uploadObservations`:
+
+1. Fetches project schema once
+2. Resolves `system_name` and `procedure_name`
+3. Maps `item_name` to `item_uuid` when UUIDs are missing
+4. Builds grouped observations from flat CSV rows
+5. Uploads to the `uploadObservations` endpoint
+
+### Recommended tutorial script
+
+- [`tutorials/upload_observations_from_csv.R`](tutorials/upload_observations_from_csv.R)
+
+### Minimal usage
+
+```r
+library(okalaR)
+
+hdr <- auth_headers(get_key())
+
+result <- upload_observations_from_csv(
+    hdr = hdr,
+    csv_path = "tutorials/example_observation_data .csv",
+    system_name = "Plante Ivindo",
+    procedure_name = "Arbre",
+    dry_run = TRUE,
+    recorded_at_format = "%d/%m/%Y %H:%M"
+)
+
+length(result$observations)
+```
+
 ## Contributing
 
 We welcome contributions! Please follow these best practices:
