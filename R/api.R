@@ -396,7 +396,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
 
 # Internally used function to send updated labels in chunks
 
-sendupatedlabels <- function(hdr, datachunk) {
+send_updated_labels <- function(hdr, datachunk) {
 
   datachunk <- jsonlite::toJSON(datachunk, pretty = TRUE)
 
