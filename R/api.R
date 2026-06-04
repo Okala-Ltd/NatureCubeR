@@ -215,6 +215,8 @@ plot_stations <- function(geojson_response){
 get_media_assets <- function(hdr,
                              datatype=c("video","audio","image","eDNA"),
                              psrID){
+  datatype <- match.arg(datatype)
+
 
   urlreq_ap <- httr2::req_url_path_append(
     hdr$root, "getMediaAssets", datatype, hdr$key) %>%
