@@ -1,9 +1,10 @@
-#' okalaR: API wrapper for the Okala dashboard
-#'
-#' Provides functions to interact with the Okala dashboard API, including project, station, media, and label management.
-#'
-#' @docType package
-#' @name okalaR
+#' @keywords internal
+"_PACKAGE"
+
 #' @importFrom magrittr %>%
-#' @importFrom dplyr bind_rows
+#' @export
+magrittr::`%>%`
+
+## usethis namespace: start
+## usethis namespace: end
 NULL

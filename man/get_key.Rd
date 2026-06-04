@@ -10,7 +10,8 @@ get_key()
 The API key as a character string
 }
 \description{
-Retrieves the API key from the environment variable OKALA_API_KEY. If the variable is not set, an error is raised.
+Retrieves the API key from the environment variable OKALA_API_KEY.
+If the variable is not set, an error is raised. # nolint
 }
 \examples{
 \dontrun{

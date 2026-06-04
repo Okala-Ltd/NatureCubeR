@@ -7,23 +7,65 @@
 push_new_timestamps(hdr, media_metadata, chunksize)
 }
 \arguments{
-\item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}}
+\item{hdr}{A base URL provided and valid API key returned by the
+function \link{auth_headers}}
 
-\item{media_metadata}{A tibble containing the media metadata to be submitted}
+\item{media_metadata}{A data frame or tibble containing the media records to update.
+Must contain the following columns:
+\itemize{
+  \item \strong{media_file_record_id} (required): Numeric. The unique identifier
+        of the media file record to update.
+  \item \strong{new_timestamp} (required): Character. The new timestamp in
+        ISO 8601 format (e.g., "2024-01-15T10:30:00" or "2024-01-15 10:30:00").
+}
+Additional columns will be ignored during submission.}
 
-\item{chunksize}{An integer specifying the chunk size for the submission}
+\item{chunksize}{An integer specifying the number of records to submit per
+chunk. Recommended values: 50-200 depending on network conditions. If
+chunksize exceeds the number of rows, it will be automatically adjusted.}
 }
 \value{
-A success message as a list
+No explicit return value. Progress messages are displayed for each
+  chunk submitted.
 }
 \description{
-Push new timestamps to the platform in chunks.
+Updates timestamps for multiple media file records by automatically splitting
+the data into manageable chunks. This function is recommended for large
+datasets (>1000 records) as it prevents timeout issues and provides progress
+tracking. For smaller datasets, consider using \link{update_media_timestamps}
+for direct submission without chunking.
 }
 \examples{
 \dontrun{
-  push_new_timestamps(headers, media_metadata, chunksize=100)
+  # Create a large dataset with timestamp updates
+  updates <- data.frame(
+    media_file_record_id = 1:1000,
+    new_timestamp = seq(
+      as.POSIXct("2024-01-15 08:00:00"),
+      by = "30 sec",
+      length.out = 1000
+    ) \%>\% format("\%Y-\%m-\%dT\%H:\%M:\%S")
+  )
+  
+  # Push updates in chunks of 100
+  push_new_timestamps(headers, updates, chunksize = 100)
+  
+  # Using tibble format
+  library(tibble)
+  updates <- tibble(
+    media_file_record_id = c(123, 456, 789),
+    new_timestamp = c(
+      "2024-01-15T10:30:00",
+      "2024-01-15T14:20:00",
+      "2024-01-15T18:45:00"
+    )
+  )
+  push_new_timestamps(headers, updates, chunksize = 50)
 }
 
+}
+\seealso{
+\link{update_media_timestamps} for direct submission without chunking
 }
 \author{
 Adam Varley

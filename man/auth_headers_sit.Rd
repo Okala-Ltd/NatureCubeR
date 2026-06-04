@@ -15,7 +15,8 @@ auth_headers_sit(api_key, okala_url = "https://sit.naturecube.io/api")
 A list containing the root URL and the API key
 }
 \description{
-Creates a base URL object for the development Okala API. Requires a project API key.
+Creates a base URL object for the development Okala API.
+Requires a project API key.
 }
 \examples{
 \dontrun{

@@ -15,7 +15,9 @@ auth_headers(api_key, okala_url = "https://naturecube.io/api")
 A list containing the root URL and the API key
 }
 \description{
-Creates a base URL object that can be used as a root to call endpoints. This requires a project API key, which can be obtained directly from the Okala dashboard.
+Creates a base URL object that can be used as a root to call endpoints.
+This requires a project API key, which can be obtained directly from the
+Okala dashboard.
 }
 \examples{
 \dontrun{

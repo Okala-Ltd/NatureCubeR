@@ -7,15 +7,18 @@
 get_project_labels(hdr, labeltype = c("Bioacoustic", "Camera"))
 }
 \arguments{
-\item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}}
+\item{hdr}{A base URL provided and valid API key returned by the
+function \link{auth_headers}}
 
-\item{labeltype}{A character vector specifying the label type ('Bioacoustic' or 'Camera')}
+\item{labeltype}{A character vector specifying the label type
+('Bioacoustic' or 'Camera')}
 }
 \value{
 A tibble containing project labels
 }
 \description{
-Labels are derived by using either suggested labels on the platform or by manually adding labels from the wider database.
+Labels are derived by using either suggested labels on the platform or
+by manually adding labels from the wider database.
 }
 \examples{
 \dontrun{

@@ -12,7 +12,7 @@ You can install the development version of OkalaR directly from GitHub using the
 install.packages("devtools")
 
 # Install OkalaR from GitHub
-devtools::install_github("your-org/okalaR")
+devtools::install_github("Okala-Ltd/OkalaR")
 ```
 
 ## Usage
@@ -26,45 +26,6 @@ library(OkalaR)
 ```
 
 For more detailed examples, see the [`tutorials/`](tutorials/) folder, which contains scripts demonstrating typical workflows.
-
-## API keys
-
-API keys for Okala are available in the Okala dashboard under the Settings panel. Each API key is project-specific, meaning it can only be used to access and manipulate data within the associated project. Make sure to keep your API keys secure and do not share them publicly.
-
-To this end, you need to set it as an environment variable in your console 
-
-### Using OKALA_API_KEY
-
-This section describes how to use the `OKALA_API_KEY` in your application.
-
-- The `OKALA_API_KEY` is required to authenticate requests to the Okala API.
-- Set the `OKALA_API_KEY` as an environment variable in your system or in your application's configuration file.
-- The application will automatically read the `OKALA_API_KEY` from the environment and include it in the authorization header for all API requests.
-- If the `OKALA_API_KEY` is missing or invalid, API requests will fail with an authentication error.
-
-**Example:**
-
-#### Setting the `OKALA_API_KEY` Environment Variable
-
-**Windows (Command Prompt):**
-```cmd
-set OKALA_API_KEY=your_api_key_here
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:OKALA_API_KEY="your_api_key_here"
-```
-
-**macOS/Linux (Bash):**
-```bash
-export OKALA_API_KEY=your_api_key_here
-```
-
-You can add the export command to your `.bash_profile`, `.bashrc`, or `.zshrc` file to set the variable automatically on each session.
-
-After setting the environment variable, restart your R session or terminal to ensure the changes take effect.
-
 
 ## Contributing
 
@@ -101,10 +62,7 @@ Change the version number in the DESCRIPTION file
 To build the package locally, use the following command in your R console:
 
 ```r
-devtools::build()
-
-devtools::load_all()
-
+devtools::build(path = ".")
 ```
 
 This will create a `.tar.gz` file that you can install or distribute.

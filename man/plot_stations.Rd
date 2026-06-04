@@ -7,13 +7,15 @@
 plot_stations(geojson_response)
 }
 \arguments{
-\item{geojson_response}{An sf object containing station metadata and geometry}
+\item{geojson_response}{An sf object containing station metadata and
+geometry}
 }
 \value{
 A leaflet map widget
 }
 \description{
-Plots station locations using leaflet, with circle markers sized by record count.
+Plots station locations using leaflet, with circle markers sized by
+record count.
 }
 \examples{
 \dontrun{

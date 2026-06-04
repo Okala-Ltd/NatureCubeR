@@ -7,9 +7,11 @@
 add_project_labels(hdr, labeltype = c("Bioacoustic", "Camera"), labels)
 }
 \arguments{
-\item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}}
+\item{hdr}{A base URL provided and valid API key returned by the
+function \link{auth_headers}}
 
-\item{labeltype}{A character vector specifying the label type ('Bioacoustic' or 'Camera')}
+\item{labeltype}{A character vector specifying the label type
+('Bioacoustic' or 'Camera')}
 
 \item{labels}{A label object list specifying the labels to be added}
 }
@@ -17,7 +19,9 @@ add_project_labels(hdr, labeltype = c("Bioacoustic", "Camera"), labels)
 A success message as a list
 }
 \description{
-Add labels so labellers have access to them in the Dashboard. Labels are derived by using either suggested labels on the platform or by manually adding labels from the wider database.
+Add labels so labellers have access to them in the Dashboard. Labels are
+derived by using either suggested labels on the platform or by manually
+adding labels from the wider database.
 }
 \examples{
 \dontrun{

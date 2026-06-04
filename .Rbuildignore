@@ -2,6 +2,6 @@
 ^\.Rproj\.user$
 ^\.Rhistory$
 ^\.RData$
-^\.positai$
-^\.claude$
+^\.lintr$
+^\.github$
 ^tutorials$
