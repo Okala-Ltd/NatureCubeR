@@ -12,7 +12,7 @@ You can install the development version of OkalaR directly from GitHub using the
 install.packages("devtools")
 
 # Install OkalaR from GitHub
-devtools::install_github("your-org/okalaR")
+devtools::install_github("Okala-Ltd/OkalaR")
 ```
 
 ## Usage

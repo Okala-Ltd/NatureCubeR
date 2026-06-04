@@ -1,9 +1,3 @@
-library(tidyverse)
-library(jsonlite)
-library(jsonify)
-library(leaflet)
-
-
 #' @title Get API key from environment variable
 #'
 #' @description
@@ -47,10 +41,10 @@ get_key <- function() {
 #' Adam Varley
 #' @export
 auth_headers <- function(api_key,
-                         okala_url="https://api.dashboard.okala.io/api/"){
+                         okala_url = "https://api.dashboard.okala.io/api/") {
   root <- httr2::request(okala_url)
-  d = list(key=api_key,
-           root=root)
+  d <- list(key = api_key,
+            root = root)
   return(d)
 }
 
@@ -75,10 +69,10 @@ auth_headers <- function(api_key,
 #' @export
 auth_headers_dev <- function(
     api_key,
-    okala_url="https://dev.api.dashboard.okala.io/api/"){
+    okala_url = "https://dev.api.dashboard.okala.io/api/") {
   root <- httr2::request(okala_url)
-  d = list(key=api_key,
-           root=root)
+  d <- list(key = api_key,
+            root = root)
   return(d)
 }
 
@@ -104,7 +98,7 @@ auth_headers_dev <- function(
 #' @author
 #' Adam Varley
 #' @export
-get_project <- function(hdr){
+get_project <- function(hdr) {
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "getProject", hdr$key)
   preq <- httr2::req_perform(urlreq_ap)
   resp_str <- httr2::resp_body_json(preq)
@@ -135,12 +129,12 @@ get_project <- function(hdr){
 #' Adam Varley
 #' @export
 get_station_info <- function(hdr,
-                             datatype=c("video","audio","image","eDNA")){
+                             datatype = c("video", "audio", "image", "eDNA")) {
   urlreq_ap <- httr2::req_url_path_append(
     hdr$root, "getStations", datatype, hdr$key)
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_string(preq)
-  geojson_response = geojsonsf::geojson_sf(resp)
+  geojson_response <- geojsonsf::geojson_sf(resp)
 
   return(geojson_response)
 }
@@ -163,13 +157,13 @@ get_station_info <- function(hdr,
 #'
 #' @author
 #' Adam Varley
-plot_stations <- function(geojson_response){
+plot_stations <- function(geojson_response) {
     message('Plotting stations')
     leaflet::leaflet(data = geojson_response) %>%
       leaflet::addTiles() %>%
       leaflet::addCircleMarkers(
-        lat=sf::st_coordinates(geojson_response)[,2],
-        lng=sf::st_coordinates(geojson_response)[,1],
+        lat = sf::st_coordinates(geojson_response)[, 2],
+        lng = sf::st_coordinates(geojson_response)[, 1],
         label = ~paste(device_id),
         popup = ~paste("QR code: ", device_id, "<br>",
         "Start time: ",
@@ -180,9 +174,9 @@ plot_stations <- function(geojson_response){
         ),
         color = "red",
         opacity = 0.2,
-        stroke = T,
+        stroke = TRUE,
         fillOpacity = 0.6,
-        radius = ~ scales::rescale(record_count, c(5,15))
+        radius = ~ scales::rescale(record_count, c(5, 15))
       )
 
 }
@@ -213,15 +207,15 @@ plot_stations <- function(geojson_response){
 #' Adam Varley
 #' @export
 get_media_assets <- function(hdr,
-                             datatype=c("video","audio","image","eDNA"),
-                             psrID){
+                             datatype = c("video", "audio", "image", "eDNA"),
+                             psrID) {
 
   urlreq_ap <- httr2::req_url_path_append(
     hdr$root, "getMediaAssets", datatype, hdr$key) %>%
     httr2::req_method("POST") %>%
-    httr2::req_body_json(data=psrID)
+    httr2::req_body_json(data = psrID)
 
-  preq <- httr2::req_perform(urlreq_ap,verbosity=3)
+  preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
   resp <- httr2::resp_body_string(preq)
 
   return(jsonlite::fromJSON(resp) %>% tibble::as_tibble())
@@ -252,7 +246,7 @@ get_media_assets <- function(hdr,
 #' Adam Varley
 #' @export
 get_project_labels <- function(hdr,
-                               labeltype = c('Bioacoustic','Camera')){
+                               labeltype = c('Bioacoustic', 'Camera')) {
   urlreq_ap <- httr2::req_url_path_append(
     hdr$root, "getProjectLabels", labeltype, hdr$key)
   preq <- httr2::req_perform(urlreq_ap)
@@ -285,9 +279,10 @@ get_project_labels <- function(hdr,
 #' Adam Varley
 #' @export
 add_project_labels <- function(hdr,
-                               labeltype = c('Bioacoustic','Camera'),labels){
-  urlreq_ap <- httr2::req_url_path_append(hdr$root,"addProjectLabels",labeltype,hdr$key)
-  urlreq_ap <- urlreq_ap |>  httr2::req_method("POST") |> httr2::req_body_json(data=labels)
+                               labeltype = c('Bioacoustic', 'Camera'),
+                               labels) {
+  urlreq_ap <- httr2::req_url_path_append(hdr$root, "addProjectLabels", labeltype, hdr$key)
+  urlreq_ap <- urlreq_ap |> httr2::req_method("POST") |> httr2::req_body_json(data = labels)
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_json(preq)
 
@@ -295,8 +290,8 @@ add_project_labels <- function(hdr,
 }
 
 # Utility function to replace NULLs with NAs in a data frame
-replace_nas <- function(df){
-  df[sapply(df,function(x) is.null(x))] = NA
+replace_nas <- function(df) {
+  df[sapply(df, function(x) is.null(x))] <- NA
   return(df)
 }
 
@@ -320,21 +315,30 @@ replace_nas <- function(df){
 #' @author
 #' Adam Varley
 #' @export
-getIUCNLabels <- function(hdr, offset, limit,search_term=NULL){
-  if (is.null(search_term)){
-    search_term = ""
+getIUCNLabels <- function(hdr, offset, limit, search_term = NULL) {
+  if (is.null(search_term)) {
+    search_term <- ""
   }
-  if (limit > 20000){
+  if (limit > 20000) {
     stop("Limit cannot be greater than 20000")
   }
-  urlreq_ap <- httr2::req_url_path_append(hdr$root,"getIUCNLabels",hdr$key)
-  urlreq_ap <- urlreq_ap |>  httr2::req_method("GET") |> httr2::req_url_query("offset" = offset, "limit" = limit,'search_term'= search_term)
+  urlreq_ap <- httr2::req_url_path_append(hdr$root, "getIUCNLabels", hdr$key)
+  urlreq_ap <- urlreq_ap |>
+    httr2::req_method("GET") |>
+    httr2::req_url_query("offset" = offset, "limit" = limit, "search_term" = search_term)
 
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_json(preq)
-  resp_table <- lapply(resp$table, function(x) x %>% replace_nas() %>%  tibble::as_tibble()) %>% dplyr::bind_rows()
+  resp_table <- lapply(resp$table, function(x) {
+    x %>% replace_nas() %>% tibble::as_tibble()
+  }) %>% dplyr::bind_rows()
 
-  return (list(data=resp_table, total=resp$pagination_state$total, offset=resp$pagination_state$offset, limit=resp$pagination_state$limit))
+  return(list(
+    data = resp_table,
+    total = resp$pagination_state$total,
+    offset = resp$pagination_state$offset,
+    limit = resp$pagination_state$limit
+  ))
 }
 
 
@@ -357,34 +361,33 @@ getIUCNLabels <- function(hdr, offset, limit,search_term=NULL){
 #' @author
 #' Adam Varley
 #' @export
-add_IUCN_labels <- function(hdr,labels,chunksize){
+add_IUCN_labels <- function(hdr, labels, chunksize) {
 
-  if(nrow(labels) < 100){
+  if (nrow(labels) < 100) {
     message('Data is too small to chunk, submitting all data')
-    chunksize = nrow(labels)
-    spl.dt = list(labels)
+    chunksize <- nrow(labels)
+    spl.dt <- list(labels)
   } else {
 
-    if(chunksize > nrow(labels)){
-      message('chunksize is bigger than length of data altering chunkszie to ', nrow(labels))
-      chunksize = nrow(labels)/2
+    if (chunksize > nrow(labels)) {
+      message('chunksize is bigger than length of data altering chunksize to ', nrow(labels))
+      chunksize <- nrow(labels) / 2
     } else {
-      spl.dt <- split( labels , cut(seq_len(nrow(labels)), round(nrow(labels)/chunksize)))
+      spl.dt <- split(labels, cut(seq_len(nrow(labels)), round(nrow(labels) / chunksize)))
 
     }
   }
 
 
-  i = 31
-  for (i in seq_along(spl.dt)){
+  for (i in seq_along(spl.dt)) {
 
-    urlreq_ap <- httr2::req_url_path_append(hdr$root,"addIUCNLabels",hdr$key)
-    urlreq_ap <- urlreq_ap |>  httr2::req_method("POST") |> httr2::req_body_json(data=spl.dt[[i]])
+    urlreq_ap <- httr2::req_url_path_append(hdr$root, "addIUCNLabels", hdr$key)
+    urlreq_ap <- urlreq_ap |> httr2::req_method("POST") |> httr2::req_body_json(data = spl.dt[[i]])
 
-    preq <- httr2::req_perform(urlreq_ap,verbosity=3)
+    preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
     resp <- httr2::resp_body_json(preq)
 
-    message('submitted ',i*chunksize,' labels of ', nrow(nrow(labels)))
+    message('submitted ', i * chunksize, ' labels of ', nrow(labels))
   }
 
   return(resp)
@@ -393,15 +396,13 @@ add_IUCN_labels <- function(hdr,labels,chunksize){
 
 # Internally used function to send updated labels in chunks
 
-sendupatedlabels <- function(hdr,datachunk) {
+send_updated_labels <- function(hdr, datachunk) {
 
+  datachunk <- jsonlite::toJSON(datachunk, pretty = TRUE)
 
-  datachunk = jsonlite::toJSON(datachunk,pretty=TRUE)
-
-  urlreq_ap <- httr2::req_url_path_append(hdr$root,"updateSegmentLabels", hdr$key)
-  urlreq_ap <- urlreq_ap |>  httr2::req_method("PUT")  |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
-  #
-  preq <- httr2::req_perform(urlreq_ap,verbosity=3)
+  urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateSegmentLabels", hdr$key)
+  urlreq_ap <- urlreq_ap |> httr2::req_method("PUT") |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
+  preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
   resp <- httr2::resp_body_string(preq)
 
   return(jsonlite::fromJSON(resp))
@@ -426,20 +427,18 @@ sendupatedlabels <- function(hdr,datachunk) {
 #' @author
 #' Adam Varley
 #' @export
-push_new_labels <- function(hdr,submission_records,chunksize){
+push_new_labels <- function(hdr, submission_records, chunksize) {
 
-  if(chunksize > nrow(submission_records)){
-    message('chunksize is bigger than length of data altering chunkszie to ', nrow(labels))
-    chunksize = nrow(submission_records)
+  if (chunksize > nrow(submission_records)) {
+    message('chunksize is bigger than length of data altering chunksize to ', nrow(submission_records))
+    chunksize <- nrow(submission_records)
   }
 
-  spl.dt <- split( submission_records , cut(seq_len(nrow(submission_records)), round(nrow(submission_records)/chunksize)))
-  spl.dt[1]
-  i=1
-  for (i in seq_along(spl.dt)){
+  spl.dt <- split(submission_records, cut(seq_len(nrow(submission_records)), round(nrow(submission_records) / chunksize)))
+  for (i in seq_along(spl.dt)) {
 
-    sendupatedlabels(hdr,datachunk=spl.dt[[i]])
-    message('submitted ',i*chunksize,' labels of ', nrow(submission_records))
+    send_updated_labels(hdr, datachunk = spl.dt[[i]])
+    message('submitted ', i * chunksize, ' labels of ', nrow(submission_records))
   }
 }
 
@@ -447,12 +446,11 @@ push_new_labels <- function(hdr,submission_records,chunksize){
 
 # Internal function used to chunk media metadata
 send_media_chunks <- function(hdr, datachunk) {
-  datachunk = jsonlite::toJSON(datachunk,pretty=TRUE)
+  datachunk <- jsonlite::toJSON(datachunk, pretty = TRUE)
 
-  urlreq_ap <- httr2::req_url_path_append(hdr$root,"updateTimestamps", hdr$key)
-  urlreq_ap <- urlreq_ap |>  httr2::req_method("PUT")  |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
-  #
-  preq <- httr2::req_perform(urlreq_ap,verbosity=3)
+  urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateTimestamps", hdr$key)
+  urlreq_ap <- urlreq_ap |> httr2::req_method("PUT") |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
+  preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
   resp <- httr2::resp_body_string(preq)
 
   return(jsonlite::fromJSON(resp))
@@ -641,18 +639,17 @@ update_media_timestamps <- function(hdr, media_records) {
 #' Adam Varley
 #' @export
 push_new_timestamps <- function(hdr, media_metadata, chunksize) {
-    if(chunksize > nrow(media_metadata)){
-        message('chunksize is bigger than length of data altering chunkszie to ', nrow(media_metadata))
-        chunksize = nrow(media_metadata)
-    }
+  if (chunksize > nrow(media_metadata)) {
+    message('chunksize is bigger than length of data altering chunksize to ', nrow(media_metadata))
+    chunksize <- nrow(media_metadata)
+  }
 
-    spl.dt <- split( media_metadata , cut(seq_len(nrow(media_metadata)), round(nrow(media_metadata)/chunksize)))
-    i=1
-    for (i in seq_along(spl.dt)){
+  spl.dt <- split(media_metadata, cut(seq_len(nrow(media_metadata)), round(nrow(media_metadata) / chunksize)))
+  for (i in seq_along(spl.dt)) {
 
-        send_media_chunks(hdr,spl.dt[[i]])
-        message('submitted ',i*chunksize,' timestamps of ', nrow(media_metadata))
-    }
+    send_media_chunks(hdr, spl.dt[[i]])
+    message('submitted ', i * chunksize, ' timestamps of ', nrow(media_metadata))
+  }
 }
 
 #' @title Set blank status for segment labels

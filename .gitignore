@@ -17,3 +17,4 @@ NatureCubePy/src/naturecubepy/__pycache__/
 NatureCubePy/tests/__pycache__/
 NatureCubePy/.pytest_cache/
 NatureCubePy/*.egg-info/
+.positai
