@@ -20,7 +20,7 @@ This tutorial demonstrates how to use the `okalaR` package to interact with the 
 Your API key is found in your project settings on the Okala dashboard: [https://dashboard.okala.io/](https://dashboard.okala.io/)
 
 ```{r auth, eval=FALSE}
-api_key <- 'your_api_key_here' # Replace with your actual API key
+api_key <- get_key()
 headers <- auth_headers(api_key, okala_url = "https://api.dashboard.okala.io/api/")
 ```
 

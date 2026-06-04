@@ -11,5 +11,10 @@ Allows basic reading and writing of data to and from your project on the okala d
 \author{
 \strong{Maintainer}: Adam Varley \email{adam@okala.io}
 
+Authors:
+\itemize{
+  \item Adam Varley \email{adam@okala.io}
+}
+
 }
 \keyword{internal}
