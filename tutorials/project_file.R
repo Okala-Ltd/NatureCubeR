@@ -47,7 +47,7 @@ add_IUCN_labels(hdr=headers,labels=example_data,chunksize = 500)
 
 # Update existing labels on the platform
 
-media_labels %>% filter(is.na(label))
+missing_labels <- dplyr::filter(media_labels, is.na(label))
 
 data.frame()
 media_labels[1,]
