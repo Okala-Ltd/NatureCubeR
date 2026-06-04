@@ -329,8 +329,9 @@ getIUCNLabels <- function(hdr, offset, limit,search_term=NULL){
   urlreq_ap <- urlreq_ap |>  httr2::req_method("GET") |> httr2::req_url_query("offset" = offset, "limit" = limit,'search_term'= search_term)
 
   preq <- httr2::req_perform(urlreq_ap)
-  resp <- httr2::resp_body_json(preq)
-  resp_table <- lapply(resp$table, function(x) x %>% replace_nas() %>%  tibble::as_tibble()) %>% bind_rows()
+  resp_str <- httr2::resp_body_string(preq)
+  resp <- jsonlite::fromJSON(resp_str)
+  resp_table <- tibble::as_tibble(resp$table)
 
   return (list(data=resp_table, total=resp$pagination_state$total, offset=resp$pagination_state$offset, limit=resp$pagination_state$limit))
 }
