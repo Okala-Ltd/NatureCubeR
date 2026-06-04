@@ -9,4 +9,12 @@ okalaR.Rcheck
 okalaR.Rproj
 renv/
 
+# NatureCubePy Python package artifacts
+NatureCubePy/.venv/
+NatureCubePy/dist/
+NatureCubePy/__pycache__/
+NatureCubePy/src/naturecubepy/__pycache__/
+NatureCubePy/tests/__pycache__/
+NatureCubePy/.pytest_cache/
+NatureCubePy/*.egg-info/
 .positai
