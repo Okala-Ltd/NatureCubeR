@@ -611,10 +611,18 @@ list_systems <- function(schema) {
 #' @param procedure_index Integer. Index of the procedure. Default \code{NULL}
 #'   (resolves to 1 if \code{procedure_name} is also absent).
 #'
-#' @return A data frame (invisibly) with one row per item and columns
-#'   \code{item_id}, \code{item_uuid}, \code{item_name}, \code{item_description},
-#'   \code{data_type}, \code{nullable}, and \code{choices}. The data frame is
-#'   also printed to the console.
+#' @return A named list (invisibly) with elements:
+#'   \describe{
+#'     \item{system_id}{Integer project system ID.}
+#'     \item{procedure_id}{Integer procedure ID.}
+#'     \item{system_name}{Character system name.}
+#'     \item{procedure_name}{Character procedure name.}
+#'     \item{form}{Logical; whether the procedure is a form.}
+#'     \item{items}{Data frame with one row per item: \code{item_id}, \code{item_uuid},
+#'       \code{item_name}, \code{item_description}, \code{data_type}, \code{nullable},
+#'       \code{choices}.}
+#'   }
+#'   The items table is also printed to the console.
 #'
 #' @examples
 #' \dontrun{
@@ -622,17 +630,17 @@ list_systems <- function(schema) {
 #'   schema <- get_project_schema(hdr)
 #'
 #'   # Explore using names
-#'   describe_procedure(schema,
+#'   get_procedure(schema,
 #'     system_name = "Plante Ivindo",
 #'     procedure_name = "Arbre")
 #'
 #'   # Or by index
-#'   describe_procedure(schema, system_index = 1, procedure_index = 2)
+#'   get_procedure(schema, system_index = 1, procedure_index = 2)
 #' }
 #'
 #' @author Adam Varley
 #' @export
-describe_procedure <- function(schema,
+get_procedure <- function(schema,
                                system_name = NULL,
                                system_index = NULL,
                                procedure_name = NULL,
@@ -709,12 +717,373 @@ describe_procedure <- function(schema,
   sys_name  <- as.character(system$system_name %||% paste("System", idx$system_index))
   proc_name <- as.character(procedure$procedure_name %||% paste("Procedure", idx$procedure_index))
   proc_form <- if (!is.null(procedure$form)) as.logical(procedure$form) else NA
+  sys_id    <- if (!is.null(system$project_system_id)) as.integer(system$project_system_id) else NA_integer_
+  proc_id   <- if (!is.null(procedure$procedure_id))   as.integer(procedure$procedure_id)   else NA_integer_
 
-  message("System: ", sys_name)
-  message("Procedure: ", proc_name, " (form: ", proc_form, ")")
+  out <- list(
+    system_id      = sys_id,
+    procedure_id   = proc_id,
+    system_name    = sys_name,
+    procedure_name = proc_name,
+    form           = proc_form,
+    items          = result
+  )
+
+  message("System: ", sys_name, " (id: ", sys_id, ")")
+  message("Procedure: ", proc_name, " (id: ", proc_id, ", form: ", proc_form, ")")
   message("Items (", nrow(result), "):")
   print(result)
-  return(invisible(result))
+  return(invisible(out))
+}
+
+
+#' @title Validate CSV Against Procedure
+#'
+#' @description
+#' Checks an observation CSV against a procedure object returned by
+#' \code{get_procedure()}. Two CSV layouts are supported and
+#' auto-detected:
+#'
+#' \strong{Long format} — one row per observation item. Has an
+#' \code{item_name} column and a \code{data} column. Rows sharing the
+#' same lat/lon will become observations under the same parent feature.
+#'
+#' \strong{Wide format} — one row per feature. Procedure item names are
+#' spread as column headers; each row contains all item values for one
+#' feature. Must still have \code{longitude}, \code{latitude}, and
+#' \code{recorded_at} columns.
+#'
+#' The format is detected automatically: if the CSV contains a column
+#' matching \code{item_name_col} it is treated as long format, otherwise
+#' wide format is assumed. Override with \code{format = "long"} or
+#' \code{format = "wide"}.
+#'
+#' @param procedure Named list returned by \code{get_procedure()}.
+#' @param csv_path Path to the CSV file to validate.
+#' @param format One of \code{"auto"} (default), \code{"long"}, or
+#'   \code{"wide"}.
+#' @param item_name_col Column holding item names (long format only).
+#'   Default \code{"item_name"}.
+#' @param value_col Column holding text values (long format only).
+#'   Default \code{"data"}.
+#' @param numeric_value_col Column holding numeric values (long format
+#'   only). Default \code{"numbers"}.
+#' @param lon_col Longitude column. Default \code{"longitude"}.
+#' @param lat_col Latitude column. Default \code{"latitude"}.
+#' @param recorded_at_col Timestamp column. Default \code{"recorded_at"}.
+#'
+#' @return A list (invisibly) with elements:
+#'   \describe{
+#'     \item{format}{Detected or specified format: \code{"long"} or \code{"wide"}.}
+#'     \item{matched_items}{Procedure items found in the CSV.}
+#'     \item{unrecognised_names}{Item names/columns in the CSV not in the procedure.}
+#'     \item{missing_items}{Procedure items absent from the CSV.}
+#'     \item{type_issues}{Data frame of value/data_type conflicts.}
+#'     \item{feature_groups}{How rows map to parent features.}
+#'     \item{valid}{Logical; \code{TRUE} when no blocking issues found.}
+#'   }
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   schema <- get_project_schema(hdr)
+#'   procedure <- get_procedure(schema,
+#'     system_name = "Plante Ivindo", procedure_name = "Arbre")
+#'
+#'   # Long format
+#'   validate_csv_against_procedure(procedure,
+#'     csv_path = "tutorials/example_observation_data.csv")
+#'
+#'   # Wide format (auto-detected or explicit)
+#'   validate_csv_against_procedure(procedure,
+#'     csv_path = "tutorials/example_wide.csv", format = "wide")
+#' }
+#'
+#' @author Adam Varley
+#' @export
+validate_csv_against_procedure <- function(procedure,
+                                           csv_path,
+                                           format            = "auto",
+                                           item_name_col     = "item_name",
+                                           value_col         = "data",
+                                           numeric_value_col = "numbers",
+                                           lon_col           = "longitude",
+                                           lat_col           = "latitude",
+                                           recorded_at_col   = "recorded_at") {
+
+  if (!is.list(procedure) || is.null(procedure$items) || nrow(procedure$items) == 0) {
+    stop("procedure must be a non-empty list returned by get_procedure()")
+  }
+
+  # Extract metadata from the named list
+  proc_system_id    <- procedure$system_id    %||% NA_integer_
+  proc_procedure_id <- procedure$procedure_id %||% NA_integer_
+  proc_system_name  <- procedure$system_name  %||% ""
+  proc_proc_name    <- procedure$procedure_name %||% ""
+
+  # Work with items data frame
+  procedure <- procedure$items
+  if (!file.exists(csv_path)) {
+    stop("csv_path does not exist: ", csv_path)
+  }
+  format <- match.arg(format, c("auto", "long", "wide"))
+
+  csv <- utils::read.csv(
+    csv_path,
+    stringsAsFactors = FALSE,
+    check.names      = FALSE,
+    fileEncoding     = "UTF-8"
+  )
+
+  # ---- Auto-detect format -----------------------------------------------
+  detected_format <- if (format == "auto") {
+    if (item_name_col %in% names(csv)) "long" else "wide"
+  } else {
+    format
+  }
+
+  message("Detected CSV format: ", detected_format)
+
+  # ---- Shared lookups ---------------------------------------------------
+  dt_lookup <- stats::setNames(procedure$data_type, normalize_lookup_value(procedure$item_name))
+  ch_lookup <- stats::setNames(procedure$choices,   normalize_lookup_value(procedure$item_name))
+  proc_norm <- normalize_lookup_value(procedure$item_name)
+
+  # Internal: check a single value against its expected data_type
+  check_value <- function(item_name_norm, effective_val, row_num) {
+    dt <- dt_lookup[item_name_norm]
+    if (is.na(dt) || !nzchar(dt)) return(NULL)
+    if (!nzchar(effective_val) || identical(effective_val, "NA")) return(NULL)
+    dt_lower <- tolower(dt)
+    problem  <- ""
+    if (grepl("num|int|float|double|decimal|real", dt_lower)) {
+      if (is.na(suppressWarnings(as.numeric(effective_val)))) {
+        problem <- paste0("expected numeric for data_type '", dt, "', got: '", effective_val, "'")
+      }
+    } else if (grepl("bool", dt_lower)) {
+      if (!tolower(effective_val) %in% c("true", "false", "yes", "no", "1", "0")) {
+        problem <- paste0("expected boolean for data_type '", dt, "', got: '", effective_val, "'")
+      }
+    } else if (grepl("choice", dt_lower)) {
+      choices_raw <- ch_lookup[item_name_norm]
+      if (!is.na(choices_raw) && nzchar(choices_raw)) {
+        valid_choices <- trimws(strsplit(choices_raw, "\\|")[[1]])
+        if (!effective_val %in% valid_choices) {
+          problem <- paste0("'", effective_val, "' not in choices: ", paste(valid_choices, collapse = " | "))
+        }
+      }
+    }
+    if (!nzchar(problem)) return(NULL)
+    list(row = row_num, data_type = dt, value = effective_val, problem = problem)
+  }
+
+  # ---- Dispatch to format-specific checks --------------------------------
+  if (detected_format == "long") {
+    result <- .validate_long(
+      csv, procedure, proc_norm, dt_lookup, ch_lookup,
+      check_value, item_name_col, value_col, numeric_value_col,
+      lon_col, lat_col, recorded_at_col
+    )
+  } else {
+    result <- .validate_wide(
+      csv, procedure, proc_norm, dt_lookup, ch_lookup,
+      check_value, lon_col, lat_col, recorded_at_col
+    )
+  }
+
+  result$format       <- detected_format
+  result$system_id    <- proc_system_id
+  result$procedure_id <- proc_procedure_id
+
+  # ---- Print summary -----------------------------------------------------
+  message("\n--- CSV Validation Report (", detected_format, " format) ---")
+  message("System: ", proc_system_name, " (id: ", proc_system_id, ")")
+  message("Procedure: ", proc_proc_name, " (id: ", proc_procedure_id, ")")
+
+  message("Matched items (", nrow(result$matched_items), "/", nrow(procedure), "):")
+  if (nrow(result$matched_items) > 0) {
+    print(result$matched_items[, c("item_name", "data_type"), drop = FALSE])
+  }
+  if (nrow(result$missing_items) > 0) {
+    required_miss <- result$missing_items[is.na(result$missing_items$nullable) | !result$missing_items$nullable, , drop = FALSE]
+    optional_miss <- result$missing_items[!is.na(result$missing_items$nullable) & result$missing_items$nullable, , drop = FALSE]
+    if (nrow(required_miss) > 0) {
+      message("\nMissing required items (", nrow(required_miss), "):")
+      print(required_miss[, c("item_name", "data_type", "nullable"), drop = FALSE])
+    }
+    if (nrow(optional_miss) > 0) {
+      message("\nMissing nullable/optional items (", nrow(optional_miss), ") — allowed:")
+      print(optional_miss[, c("item_name", "data_type", "nullable"), drop = FALSE])
+    }
+  }
+  if (length(result$unrecognised_names) > 0) {
+    message("\nUnrecognised item names in CSV:")
+    print(result$unrecognised_names)
+  }
+  if (nrow(result$type_issues) > 0) {
+    message("\nData type issues:")
+    print(result$type_issues)
+  }
+  message("\nFeature groups (", nrow(result$feature_groups), " parent feature(s)):")
+  print(result$feature_groups)
+  message("\nValid: ", result$valid)
+  if (length(result$issues) > 0) {
+    message("Issues:\n  ", paste(result$issues, collapse = "\n  "))
+  }
+
+  return(invisible(result[setdiff(names(result), "issues")]))
+}
+
+
+# Internal: validate long-format CSV.
+.validate_long <- function(csv, procedure, proc_norm, dt_lookup, ch_lookup,
+                           check_value, item_name_col, value_col,
+                           numeric_value_col, lon_col, lat_col, recorded_at_col) {
+  issues <- character()
+
+  required_cols <- c(lon_col, lat_col, recorded_at_col, item_name_col, value_col)
+  missing_std   <- setdiff(required_cols, names(csv))
+  if (length(missing_std) > 0) {
+    issues <- c(issues, paste("Missing columns:", paste(missing_std, collapse = ", ")))
+  }
+
+  csv_item_names <- if (item_name_col %in% names(csv)) {
+    unique(trimws(csv[[item_name_col]]))
+  } else character()
+  csv_item_names <- csv_item_names[nzchar(csv_item_names)]
+  csv_norm       <- normalize_lookup_value(csv_item_names)
+
+  matched_mask      <- proc_norm %in% csv_norm
+  matched_items     <- procedure[matched_mask,  , drop = FALSE]
+  missing_items     <- procedure[!matched_mask, , drop = FALSE]
+  unrecognised_names <- csv_item_names[!csv_norm %in% proc_norm]
+
+  required_missing <- missing_items[is.na(missing_items$nullable) | !missing_items$nullable, , drop = FALSE]
+  optional_missing <- missing_items[!is.na(missing_items$nullable) & missing_items$nullable, , drop = FALSE]
+  if (nrow(required_missing) > 0) issues <- c(issues, paste(nrow(required_missing), "required item(s) have no rows in the CSV:", paste(required_missing$item_name, collapse = ", ")))
+  if (nrow(optional_missing) > 0) message("Note: ", nrow(optional_missing), " nullable item(s) absent from CSV (allowed): ", paste(optional_missing$item_name, collapse = ", "))
+  if (length(unrecognised_names)   > 0) issues <- c(issues, paste(length(unrecognised_names), "CSV item name(s) not found in procedure:", paste(unrecognised_names, collapse = ", ")))
+
+  # Data type checks
+  type_rows <- list()
+  if (item_name_col %in% names(csv) && value_col %in% names(csv)) {
+    for (r in seq_len(nrow(csv))) {
+      nm    <- normalize_lookup_value(trimws(as.character(csv[[item_name_col]][r])))
+      if (!nzchar(nm)) next
+      v_txt <- trimws(as.character(csv[[value_col]][r]))
+      v_num <- if (numeric_value_col %in% names(csv)) csv[[numeric_value_col]][r] else NA
+      eff   <- if (nzchar(v_txt)) v_txt else as.character(v_num)
+      hit   <- check_value(nm, eff, r)
+      if (!is.null(hit)) {
+        type_rows[[length(type_rows) + 1]] <- c(list(item_name = as.character(csv[[item_name_col]][r])), hit)
+      }
+    }
+  }
+  type_issues <- if (length(type_rows) == 0) {
+    data.frame(row = integer(), item_name = character(), data_type = character(), value = character(), problem = character(), stringsAsFactors = FALSE)
+  } else {
+    do.call(rbind, lapply(type_rows, as.data.frame, stringsAsFactors = FALSE))
+  }
+  if (nrow(type_issues) > 0) issues <- c(issues, paste(nrow(type_issues), "data type issue(s) found (see $type_issues)"))
+
+  # Feature grouping
+  feature_groups <- .feature_groups_long(csv, lon_col, lat_col, item_name_col)
+
+  list(
+    matched_items      = matched_items,
+    unrecognised_names = unrecognised_names,
+    missing_items      = missing_items,
+    type_issues        = type_issues,
+    feature_groups     = feature_groups,
+    valid              = length(issues) == 0,
+    issues             = issues
+  )
+}
+
+
+# Internal: validate wide-format CSV.
+.validate_wide <- function(csv, procedure, proc_norm, dt_lookup, ch_lookup,
+                           check_value, lon_col, lat_col, recorded_at_col) {
+  issues <- character()
+
+  meta_cols    <- c(lon_col, lat_col, recorded_at_col)
+  missing_meta <- setdiff(meta_cols, names(csv))
+  if (length(missing_meta) > 0) {
+    issues <- c(issues, paste("Missing metadata columns:", paste(missing_meta, collapse = ", ")))
+  }
+
+  # Item columns = all non-metadata columns
+  item_cols  <- setdiff(names(csv), meta_cols)
+  col_norm   <- normalize_lookup_value(item_cols)
+
+  matched_mask      <- proc_norm %in% col_norm
+  matched_items     <- procedure[matched_mask,  , drop = FALSE]
+  missing_items     <- procedure[!matched_mask, , drop = FALSE]
+  unrecognised_names <- item_cols[!col_norm %in% proc_norm]
+
+  required_missing <- missing_items[is.na(missing_items$nullable) | !missing_items$nullable, , drop = FALSE]
+  optional_missing <- missing_items[!is.na(missing_items$nullable) & missing_items$nullable, , drop = FALSE]
+  if (nrow(required_missing) > 0) issues <- c(issues, paste(nrow(required_missing), "required item(s) have no column in the CSV:", paste(required_missing$item_name, collapse = ", ")))
+  if (nrow(optional_missing) > 0) message("Note: ", nrow(optional_missing), " nullable item(s) absent from CSV (allowed): ", paste(optional_missing$item_name, collapse = ", "))
+  if (length(unrecognised_names) > 0) issues <- c(issues, paste(length(unrecognised_names), "CSV column(s) not found in procedure:", paste(unrecognised_names, collapse = ", ")))
+
+  # Data type checks — one cell per matched column per row
+  type_rows <- list()
+  for (col in item_cols) {
+    nm <- normalize_lookup_value(col)
+    if (!nm %in% proc_norm) next
+    for (r in seq_len(nrow(csv))) {
+      eff <- trimws(as.character(csv[[col]][r]))
+      hit <- check_value(nm, eff, r)
+      if (!is.null(hit)) {
+        type_rows[[length(type_rows) + 1]] <- c(list(item_name = col), hit)
+      }
+    }
+  }
+  type_issues <- if (length(type_rows) == 0) {
+    data.frame(row = integer(), item_name = character(), data_type = character(), value = character(), problem = character(), stringsAsFactors = FALSE)
+  } else {
+    do.call(rbind, lapply(type_rows, as.data.frame, stringsAsFactors = FALSE))
+  }
+  if (nrow(type_issues) > 0) issues <- c(issues, paste(nrow(type_issues), "data type issue(s) found (see $type_issues)"))
+
+  # Feature grouping — each row is already one feature
+  feature_groups <- data.frame(
+    longitude  = if (lon_col %in% names(csv)) suppressWarnings(as.numeric(csv[[lon_col]])) else rep(NA_real_, nrow(csv)),
+    latitude   = if (lat_col %in% names(csv)) suppressWarnings(as.numeric(csv[[lat_col]])) else rep(NA_real_, nrow(csv)),
+    n_items    = length(item_cols),
+    stringsAsFactors = FALSE
+  )
+
+  list(
+    matched_items      = matched_items,
+    unrecognised_names = unrecognised_names,
+    missing_items      = missing_items,
+    type_issues        = type_issues,
+    feature_groups     = feature_groups,
+    valid              = length(issues) == 0,
+    issues             = issues
+  )
+}
+
+
+# Internal: build feature-group summary for long-format CSV.
+.feature_groups_long <- function(csv, lon_col, lat_col, item_name_col) {
+  if (!all(c(lon_col, lat_col) %in% names(csv))) {
+    return(data.frame(longitude = numeric(), latitude = numeric(), n_rows = integer(), item_names = character(), stringsAsFactors = FALSE))
+  }
+  lon_vals  <- suppressWarnings(as.numeric(csv[[lon_col]]))
+  lat_vals  <- suppressWarnings(as.numeric(csv[[lat_col]]))
+  group_key <- paste0(round(lon_vals, 7), "::", round(lat_vals, 7))
+  do.call(rbind, lapply(split(csv, group_key), function(g) {
+    data.frame(
+      longitude  = suppressWarnings(as.numeric(g[[lon_col]][1])),
+      latitude   = suppressWarnings(as.numeric(g[[lat_col]][1])),
+      n_rows     = nrow(g),
+      item_names = if (item_name_col %in% names(g)) paste(trimws(g[[item_name_col]]), collapse = " | ") else "",
+      stringsAsFactors = FALSE
+    )
+  }))
 }
 
 

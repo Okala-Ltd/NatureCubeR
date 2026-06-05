@@ -30,7 +30,7 @@ api_key <- get_key()
 # Reads NATURECUBE_URL from .Renviron by default.
 hdr <- auth_headers(api_key)
 
-get_project(hdr)
+# get_project(hdr)
 
 # ----------------------------------------------------------------------------
 # 2. Fetch reference schema first
@@ -40,23 +40,15 @@ reference_schema <- get_project_schema(hdr)
 
 list_systems(reference_schema)
 
-procedure <- describe_procedure(reference_schema,
+procedure <- get_procedure(reference_schema,
                    system_name    = "Plante Ivindo",
                    procedure_name = "Arbre")
 
-cat("Fetched schema with", length(system_names), "system(s).\n")
-cat("Systems:\n")
-print(system_names)
+validate_csv_against_procedure(
+  procedure = procedure,
+  csv_path  = file.path(repo_root, "tutorials", "example_observation_data.csv")
+)
 
-# ----------------------------------------------------------------------------
-# 3. Input CSV
-# ----------------------------------------------------------------------------
-
-csv_path <- file.path(repo_root, "tutorials", "example_observation_data.csv")
-
-if (!file.exists(csv_path)) {
-  stop("CSV file not found at: ", csv_path)
-}
 
 # ----------------------------------------------------------------------------
 # 4. Dry run (recommended first)
