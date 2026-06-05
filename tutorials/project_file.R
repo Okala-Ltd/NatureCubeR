@@ -5,7 +5,7 @@ source('R/api.R')
 
 api_key <- get_key()
 # Set auth headers appropriately
-headers <- auth_headers(api_key,okala_url="http://localhost:8000/api")
+headers <- auth_headers(api_key,NATURECUBE_URL="http://localhost:8000/api")
 
 # Way to see the project you are pulling and confirm api key is correct
 get_project(hdr=headers)

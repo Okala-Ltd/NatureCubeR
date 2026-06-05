@@ -25,8 +25,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Okala-Ltd/OkalaR"
-Repository = "https://github.com/Okala-Ltd/OkalaR"
+Homepage = "https://github.com/Okala-Ltd/NatureCubeR"
+Repository = "https://github.com/Okala-Ltd/NatureCubeR"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]

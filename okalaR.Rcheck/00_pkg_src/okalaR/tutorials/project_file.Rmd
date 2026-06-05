@@ -1,0 +1,87 @@
+---
+title: "OkalaR Package Tutorial"
+author: "Adam Varley"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(okalaR)
+library(jsonlite)
+```
+
+# Getting Started
+
+This tutorial demonstrates how to use the `okalaR` package to interact with the Okala dashboard API.
+
+## Authentication
+
+Your API key is found in your project settings on the Okala dashboard: [https://dashboard.okala.io/](https://dashboard.okala.io/)
+
+```{r auth, eval=FALSE}
+api_key <- 'your_api_key_here' # Replace with your actual API key
+headers <- auth_headers(api_key, okala_url = "https://api.dashboard.okala.io/api/")
+```
+
+## Get Project Information
+
+```{r get-project, eval=FALSE}
+get_project(hdr = headers)
+```
+
+## Get Station Information
+
+```{r get-stations, eval=FALSE}
+stations <- get_station_info(hdr = headers, datatype = "video")
+plot_stations(stations)
+```
+
+## Get Media Labels for Sensors
+
+```{r get-media-labels, eval=FALSE}
+media_labels <- get_media_assets(hdr = headers,
+                                 datatype = "video",
+                                 psrID = stations$project_system_record_id)
+```
+
+## Get Project Labels
+
+```{r get-project-labels, eval=FALSE}
+project_camera_labels <- get_project_labels(hdr = headers, labeltype = 'Camera')
+```
+
+## Get IUCN Labels
+
+```{r get-iucn-labels, eval=FALSE}
+labelled_data <- getIUCNLabels(hdr = headers,
+                              limit = 2000,
+                              offset = 0,
+                              search_term = 'Domestic horse')
+```
+
+## Add Labels to IUCN Database
+
+```{r add-iucn-labels, eval=FALSE}
+example_data <- 'data/domestic_animals.json'
+example_data <- readLines(example_data)
+example_data <- jsonlite::fromJSON(example_data)
+example_data <- jsonlite::fromJSON(example_data)
+example_data <- example_data[example_data$species != 'NA', ]
+example_data$class <- example_data$class_
+example_data$extant_country_list <- NA
+example_data$iucn_redlist_status[example_data$iucn_redlist_status == 'Extinct In The Wild'] <- 'Extinct in the Wild'
+example_data$iucn_redlist_status <- gsub('Lower Risk/', '', example_data$iucn_redlist_status)
+example_data$iucn_redlist_status <- gsub('Conservation Dependent', 'Not Evaluated', example_data$iucn_redlist_status)
+
+add_IUCN_labels(hdr = headers, labels = example_data, chunksize = 500)
+```
+
+## Update Existing Labels on the Platform
+
+```{r update-labels, eval=FALSE}
+new_label_id <- project_camera_labels[which(project_camera_labels$common_name == 'Uneven-toothed Rat'), 'label_id']
+segment_record_to_change <- data.frame(segment_record_id_fk = media_labels[1, 'segment_record_id'], label_id_fk = 1)
+submission_frame <- data.frame(segment_record_id_fk = segment_record_to_change, label_id_fk = new_label_id, number_of_individuals = 1)
+push_new_labels(hdr = headers, submission_records = submission_frame, chunksize = 30)
+```

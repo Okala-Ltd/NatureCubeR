@@ -1,0 +1,267 @@
+pkgname <- "okalaR"
+source(file.path(R.home("share"), "R", "examples-header.R"))
+options(warn = 1)
+library('okalaR')
+
+base::assign(".oldSearch", base::search(), pos = 'CheckExEnv')
+base::assign(".old_wd", base::getwd(), pos = 'CheckExEnv')
+cleanEx()
+nameEx("add_IUCN_labels")
+### * add_IUCN_labels
+
+flush(stderr()); flush(stdout())
+
+### Name: add_IUCN_labels
+### Title: Add labels from the wider IUCN database (all species)
+### Aliases: add_IUCN_labels
+
+### ** Examples
+
+## Not run: 
+##D   add_IUCN_labels(headers, labels=my_labels, chunksize=200)
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("add_project_labels")
+### * add_project_labels
+
+flush(stderr()); flush(stdout())
+
+### Name: add_project_labels
+### Title: Add project labels for either bioacoustics or camera
+### Aliases: add_project_labels
+
+### ** Examples
+
+## Not run: 
+##D   add_project_labels(headers, labeltype='Camera', labels=my_labels)
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("auth_headers")
+### * auth_headers
+
+flush(stderr()); flush(stdout())
+
+### Name: auth_headers
+### Title: Initiate root URL with API key
+### Aliases: auth_headers
+
+### ** Examples
+
+## Not run: 
+##D   headers <- auth_headers("your_api_key")
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("auth_headers_dev")
+### * auth_headers_dev
+
+flush(stderr()); flush(stdout())
+
+### Name: auth_headers_dev
+### Title: Initiate root URL with API key (Development)
+### Aliases: auth_headers_dev
+
+### ** Examples
+
+## Not run: 
+##D   headers <- auth_headers_dev("your_api_key")
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("getIUCNLabels")
+### * getIUCNLabels
+
+flush(stderr()); flush(stdout())
+
+### Name: getIUCNLabels
+### Title: Get labels from the wider IUCN database (all species)
+### Aliases: getIUCNLabels
+
+### ** Examples
+
+## Not run: 
+##D   getIUCNLabels(headers, offset=0, limit=100, search_term="horse")
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("get_key")
+### * get_key
+
+flush(stderr()); flush(stdout())
+
+### Name: get_key
+### Title: Get API key from environment variable
+### Aliases: get_key
+
+### ** Examples
+
+## Not run: 
+##D   api_key <- get_key()
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("get_media_assets")
+### * get_media_assets
+
+flush(stderr()); flush(stdout())
+
+### Name: get_media_assets
+### Title: Retrieve media assets for a given project system record ID
+### Aliases: get_media_assets
+
+### ** Examples
+
+## Not run: 
+##D   assets <- get_media_assets(headers, datatype="video", psrID=123)
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("get_project")
+### * get_project
+
+flush(stderr()); flush(stdout())
+
+### Name: get_project
+### Title: Get Project Information
+### Aliases: get_project
+
+### ** Examples
+
+## Not run: 
+##D   headers <- auth_headers("your_api_key")
+##D   get_project(headers)
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("get_project_labels")
+### * get_project_labels
+
+flush(stderr()); flush(stdout())
+
+### Name: get_project_labels
+### Title: Get project labels for either bioacoustics or camera
+### Aliases: get_project_labels
+
+### ** Examples
+
+## Not run: 
+##D   labels <- get_project_labels(headers, labeltype='Camera')
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("get_station_info")
+### * get_station_info
+
+flush(stderr()); flush(stdout())
+
+### Name: get_station_info
+### Title: Get project station metadata
+### Aliases: get_station_info
+
+### ** Examples
+
+## Not run: 
+##D   stations <- get_station_info(headers, datatype="video")
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("plot_stations")
+### * plot_stations
+
+flush(stderr()); flush(stdout())
+
+### Name: plot_stations
+### Title: Plot stations on a leaflet map
+### Aliases: plot_stations
+
+### ** Examples
+
+## Not run: 
+##D   plot_stations(stations)
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("push_new_labels")
+### * push_new_labels
+
+flush(stderr()); flush(stdout())
+
+### Name: push_new_labels
+### Title: Push new labels using a chunked process
+### Aliases: push_new_labels
+
+### ** Examples
+
+## Not run: 
+##D   push_new_labels(headers, submission_records, chunksize=30)
+## End(Not run)
+
+
+
+
+cleanEx()
+nameEx("push_new_timestamps")
+### * push_new_timestamps
+
+flush(stderr()); flush(stdout())
+
+### Name: push_new_timestamps
+### Title: Push new timestamps to the platform in chunks
+### Aliases: push_new_timestamps
+
+### ** Examples
+
+## Not run: 
+##D   push_new_timestamps(headers, media_metadata, chunksize=100)
+## End(Not run)
+
+
+
+
+### * <FOOTER>
+###
+cleanEx()
+options(digits = 7L)
+base::cat("Time elapsed: ", proc.time() - base::get("ptime", pos = 'CheckExEnv'),"\n")
+grDevices::dev.off()
+###
+### Local variables: ***
+### mode: outline-minor ***
+### outline-regexp: "\\(> \\)?### [*]+" ***
+### End: ***
+quit('no')

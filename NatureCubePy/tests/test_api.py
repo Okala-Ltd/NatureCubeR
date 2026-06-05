@@ -48,12 +48,12 @@ def hdr_dev():
 
 class TestGetKey:
     def test_returns_key_when_set(self, monkeypatch):
-        monkeypatch.setenv("OKALA_API_KEY", "abc123")
+        monkeypatch.setenv("NATURECUBE_API_KEY", "abc123")
         assert get_key() == "abc123"
 
     def test_raises_when_not_set(self, monkeypatch):
-        monkeypatch.delenv("OKALA_API_KEY", raising=False)
-        with pytest.raises(EnvironmentError, match="OKALA_API_KEY"):
+        monkeypatch.delenv("NATURECUBE_API_KEY", raising=False)
+        with pytest.raises(EnvironmentError, match="NATURECUBE_API_KEY"):
             get_key()
 
 
@@ -64,11 +64,11 @@ class TestAuthHeaders:
         assert hdr["root"] == "https://api.naturecube.io/api/"
 
     def test_custom_url(self):
-        hdr = auth_headers("mykey", okala_url="https://custom.example.com/api/")
+        hdr = auth_headers("mykey", NATURECUBE_URL="https://custom.example.com/api/")
         assert hdr["root"] == "https://custom.example.com/api/"
 
     def test_trailing_slash_normalised(self):
-        hdr = auth_headers("mykey", okala_url="https://api.naturecube.io/api/api")
+        hdr = auth_headers("mykey", NATURECUBE_URL="https://api.naturecube.io/api/api")
         assert hdr["root"].endswith("/")
 
     def test_dev_default_url(self):

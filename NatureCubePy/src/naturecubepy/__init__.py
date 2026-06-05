@@ -1,14 +1,14 @@
 """
 NatureCubePy – Python wrapper around the Okala dashboard API services.
 
-This package mirrors the functionality of the OkalaR R package, providing
+This package mirrors the functionality of the NatureCubeR R package, providing
 the same API wrapper capabilities as a Python library suitable for submission
 to PyPI.
 
 Quick start
 -----------
 >>> import os
->>> os.environ["OKALA_API_KEY"] = "your_api_key"
+>>> os.environ["NATURECUBE_API_KEY"] = "your_api_key"
 >>> from naturecubepy import auth_headers, get_project
 >>> hdr = auth_headers("your_api_key")
 >>> get_project(hdr)  # doctest: +SKIP

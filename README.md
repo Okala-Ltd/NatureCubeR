@@ -1,18 +1,18 @@
-# OkalaR
+# NatureCubeR
 ## Overview
 
-**OkalaR** is an R package that provides a convenient wrapper around Okala's API, enabling seamless integration with your R workflows.
+**NatureCubeR** is an R package that provides a convenient wrapper around Okala's API, enabling seamless integration with your R workflows.
 
 ## Installation
 
-You can install the development version of OkalaR directly from GitHub using the [`devtools`](https://cran.r-project.org/package=devtools) package:
+You can install the development version of NatureCubeR directly from GitHub using the [`devtools`](https://cran.r-project.org/package=devtools) package:
 
 ```r
 # Install devtools if you haven't already
 install.packages("devtools")
 
-# Install OkalaR from GitHub
-devtools::install_github("Okala-Ltd/OkalaR")
+# Install NatureCubeR from GitHub
+devtools::install_github("Okala-Ltd/NatureCubeR")
 ```
 
 ## Usage
@@ -20,7 +20,7 @@ devtools::install_github("Okala-Ltd/OkalaR")
 After installation, load the package and start using its functions:
 
 ```r
-library(OkalaR)
+library(NatureCubeR)
 # Example usage
 # result <- okala_function(args)
 ```
@@ -44,7 +44,7 @@ The package now includes a low-friction workflow for `uploadObservations`:
 ### Minimal usage
 
 ```r
-library(okalaR)
+library(NatureCubeR)
 
 hdr <- auth_headers(get_key())
 
@@ -86,7 +86,7 @@ We welcome contributions! Please follow these best practices:
 
 ## Support
 
-For questions or issues, please open an [issue](https://github.com/your-org/okalaR/issues) on GitHub.
+For questions or issues, please open an [issue](https://github.com/Okala-Ltd/NatureCubeR/issues) on GitHub.
 
 ## Building the Package
 

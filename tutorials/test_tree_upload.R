@@ -2,7 +2,7 @@
 # This script demonstrates transforming CSV tree survey data into the
 # phone observations format required by the Okala API.
 
-library(okalaR)
+library(NatureCubeR)
 library(dplyr)
 library(tidyr)
 
@@ -28,10 +28,10 @@ cat("Plots:", paste(unique_plots, collapse = ", "), "\n")
 
 # Set up your API credentials
 # Replace with your actual API key
-api_key <- Sys.getenv("OKALA_API_KEY")  # Or paste your key directly
+api_key <- Sys.getenv("NATURECUBE_API_KEY")  # Or paste your key directly
 
 if (api_key == "") {
-  stop("Please set your OKALA_API_KEY environment variable or paste your API key")
+  stop("Please set your NATURECUBE_API_KEY environment variable or paste your API key")
 }
 
 # Create auth headers (use auth_headers_dev() for development environment)
@@ -52,7 +52,7 @@ device <- build_device_settings(
   carrier = "Desktop",
   build_number = "1.0.0",
 
-  build_id = "okalaR-test"
+  build_id = "NatureCubeR-test"
 )
 
 print("Device settings created:")

@@ -22,7 +22,7 @@ _DEV_URL = "https://sit.api.naturecube.io/api/"
 
 
 def get_key() -> str:
-    """Retrieve the API key from the ``OKALA_API_KEY`` environment variable.
+    """Retrieve the API key from the ``NATURECUBE_API_KEY`` environment variable.
 
     Returns
     -------
@@ -32,24 +32,24 @@ def get_key() -> str:
     Raises
     ------
     EnvironmentError
-        If ``OKALA_API_KEY`` is not set.
+        If ``NATURECUBE_API_KEY`` is not set.
 
     Examples
     --------
     >>> import os
-    >>> os.environ["OKALA_API_KEY"] = "mykey"
+    >>> os.environ["NATURECUBE_API_KEY"] = "mykey"
     >>> get_key()
     'mykey'
     """
-    api_key = os.environ.get("OKALA_API_KEY", "")
+    api_key = os.environ.get("NATURECUBE_API_KEY", "")
     if not api_key:
-        raise EnvironmentError("OKALA_API_KEY environment variable not set.")
+        raise EnvironmentError("NATURECUBE_API_KEY environment variable not set.")
     return api_key
 
 
 def auth_headers(
     api_key: str,
-    okala_url: str = _PROD_URL,
+    NATURECUBE_URL: str = _PROD_URL,
 ) -> dict[str, str]:
     """Create an authentication context for the production Okala API.
 
@@ -57,7 +57,7 @@ def auth_headers(
     ----------
     api_key:
         A valid Okala project API key.
-    okala_url:
+    NATURECUBE_URL:
         Base URL for the Okala API. Defaults to the production endpoint.
 
     Returns
@@ -71,12 +71,12 @@ def auth_headers(
     >>> hdr["root"]
     'https://api.naturecube.io/api/'
     """
-    return {"key": api_key, "root": okala_url.rstrip("/") + "/"}
+    return {"key": api_key, "root": NATURECUBE_URL.rstrip("/") + "/"}
 
 
 def auth_headers_dev(
     api_key: str,
-    okala_url: str = _DEV_URL,
+    NATURECUBE_URL: str = _DEV_URL,
 ) -> dict[str, str]:
     """Create an authentication context for the development Okala API.
 
@@ -84,7 +84,7 @@ def auth_headers_dev(
     ----------
     api_key:
         A valid Okala project API key.
-    okala_url:
+    NATURECUBE_URL:
         Base URL for the Okala dev API. Defaults to the development endpoint.
 
     Returns
@@ -98,7 +98,7 @@ def auth_headers_dev(
     >>> hdr["root"]
     'https://dev.api.naturecube.io/api/'
     """
-    return {"key": api_key, "root": okala_url.rstrip("/") + "/"}
+    return {"key": api_key, "root": NATURECUBE_URL.rstrip("/") + "/"}
 
 
 def get_project(hdr: dict[str, str]) -> None:

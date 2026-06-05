@@ -1,0 +1,61 @@
+---
+title: "Test Timestamp Update with okalaR"
+author: "Adam Varley"
+date: "2025-06-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(okalaR)
+library(lubridate)
+```
+
+# Test Timestamp Update
+
+This tutorial demonstrates how to update media file timestamps using the `okalaR` package.
+
+## Authentication
+
+Your API key is found in your project settings on the Okala dashboard: [https://dashboard.okala.io/](https://dashboard.okala.io/)
+
+```{r auth, eval=FALSE}
+api_key <- Sys.getenv("OKALA_API_KEY")
+if (api_key == "") stop("OKALA_API_KEY environment variable not set.")
+headers <- auth_headers(api_key, okala_url = "https://api.dashboard.okala.io/api/")
+```
+
+## Get Project Information
+
+```{r get-project, eval=FALSE}
+get_project(hdr = headers)
+```
+
+## Get Station Information
+
+```{r get-stations, eval=FALSE}
+stations <- get_station_info(hdr = headers, datatype = "video")
+plot_stations(stations)
+```
+
+## Get Media Labels for Sensors
+
+```{r get-media-labels, eval=FALSE}
+media_labels <- get_media_assets(hdr = headers,
+                                 datatype = "video",
+                                 psrID = stations$project_system_record_id)
+subset <- media_labels[1:100, ]
+```
+
+## Adjust Timestamps
+
+```{r adjust-timestamps, eval=FALSE}
+subset$media_file_created_at <- lubridate::as_datetime(subset$media_file_created_at)
+subset$media_file_created_at <- subset$media_file_created_at + 60 # Add 60 seconds (1 minute)
+```
+
+## Push New Timestamps
+
+```{r push-timestamps, eval=FALSE}
+push_new_timestamps(hdr = headers, media_metadata = subset, chunksize = 50)
+```

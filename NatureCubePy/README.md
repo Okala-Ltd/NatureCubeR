@@ -2,7 +2,7 @@
 
 Python wrapper around the [Okala](https://okala.io) dashboard API services.
 
-NatureCubePy mirrors the functionality of the [`okalaR`](https://github.com/Okala-Ltd/OkalaR)
+NatureCubePy mirrors the functionality of the [`NatureCubeR`](https://github.com/Okala-Ltd/NatureCubeR)
 R package, providing the same API wrapper capabilities as a Python library that can be
 submitted to [PyPI](https://pypi.org).
 
@@ -23,8 +23,8 @@ uv add naturecubepy
 ### Development installation
 
 ```bash
-git clone https://github.com/Okala-Ltd/OkalaR.git
-cd OkalaR/NatureCubePy
+git clone https://github.com/Okala-Ltd/NatureCubeR.git
+cd NatureCubeR/NatureCubePy
 uv sync
 ```
 
@@ -36,8 +36,8 @@ uv sync
 import os
 from naturecubepy import auth_headers, get_project, get_station_info, plot_stations
 
-# Set your API key (or export OKALA_API_KEY in your shell)
-os.environ["OKALA_API_KEY"] = "your_api_key_here"
+# Set your API key (or export NATURECUBE_API_KEY in your shell)
+os.environ["NATURECUBE_API_KEY"] = "your_api_key_here"
 
 # Authenticate
 hdr = auth_headers("your_api_key_here")
@@ -62,7 +62,7 @@ map_widget.save("stations.html")
 
 | Function | Description |
 |---|---|
-| `get_key()` | Read `OKALA_API_KEY` from environment |
+| `get_key()` | Read `NATURECUBE_API_KEY` from environment |
 | `auth_headers(api_key)` | Create auth context for production API |
 | `auth_headers_dev(api_key)` | Create auth context for development API |
 

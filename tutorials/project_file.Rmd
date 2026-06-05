@@ -1,5 +1,5 @@
 ---
-title: "OkalaR Package Tutorial"
+title: "NatureCubeR Package Tutorial"
 author: "Adam Varley"
 date: "`r Sys.Date()`"
 output: html_document
@@ -7,13 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(okalaR)
+library(NatureCubeR)
 library(jsonlite)
 ```
 
 # Getting Started
 
-This tutorial demonstrates how to use the `okalaR` package to interact with the Okala dashboard API.
+This tutorial demonstrates how to use the `NatureCubeR` package to interact with the Okala dashboard API.
 
 ## Authentication
 
@@ -21,7 +21,7 @@ Your API key is found in your project settings on the Okala dashboard: [https://
 
 ```{r auth, eval=FALSE}
 api_key <- get_key()
-headers <- auth_headers(api_key, okala_url = "https://api.naturecube.io/api/")
+headers <- auth_headers(api_key, NATURECUBE_URL = "https://api.naturecube.io/api/")
 ```
 
 ## Get Project Information

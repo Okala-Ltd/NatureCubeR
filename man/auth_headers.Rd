@@ -4,12 +4,14 @@
 \alias{auth_headers}
 \title{Initiate root URL with API key}
 \usage{
-auth_headers(api_key, okala_url = "https://naturecube.io/api")
+auth_headers(api_key = get_key(), NATURECUBE_URL = Sys.getenv("NATURECUBE_URL", unset = "https://naturecube.io/api/"))
 }
 \arguments{
-\item{api_key}{A valid API key}
+\item{api_key}{A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
+via \code{get_key()}.}
 
-\item{okala_url}{The base URL for the Okala API (default: production)}
+\item{NATURECUBE_URL}{The base URL for the API. If omitted, reads
+\code{NATURECUBE_URL} from the environment and falls back to production.}
 }
 \value{
 A list containing the root URL and the API key

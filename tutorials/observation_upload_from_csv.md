@@ -32,7 +32,7 @@ Recommended columns:
 ## Fast start
 
 ```r
-library(okalaR)
+library(NatureCubeR)
 
 hdr <- auth_headers(get_key())
 

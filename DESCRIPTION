@@ -1,4 +1,4 @@
-Package: okalaR
+Package: NatureCubeR
 Type: Package
 Title: API wrapper around the okala dashboard interface
 Version: 1.1.8

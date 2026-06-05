@@ -3,11 +3,11 @@
 .RData
 .Ruserdata
 .Renviron
-okalaR.Rcheck
+NatureCubeR.Rcheck
 /data
 /R/project_file.R
 /project_data_labels
-okalaR.Rproj
+NatureCubeR.Rproj
 renv/
 
 # NatureCubePy Python package artifacts

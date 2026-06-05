@@ -27,17 +27,10 @@ api_key <- get_key()
 # Optional for local one-off testing (avoid committing real keys):
 # api_key <- get_key(api_key = "your_api_key_here")
 
-# Set your API base URL (works for local, dev, or production)
-okala_url <- Sys.getenv("OKALA_URL", unset = "https://api.naturecube.io/api/")
-# For local testing, e.g.:
-# okala_url <- "http://localhost:8000/api"
+# Reads NATURECUBE_URL from .Renviron by default.
+hdr <- auth_headers(api_key)
 
-hdr <- auth_headers(api_key, okala_url = okala_url)
-
-
-# Or use development:
-# hdr <- auth_headers_dev(api_key)
-
+get_project(hdr)
 # ----------------------------------------------------------------------------
 # 2. Fetch reference schema first
 # ----------------------------------------------------------------------------

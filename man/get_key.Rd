@@ -8,13 +8,13 @@ get_key(api_key = NULL)
 }
 \arguments{
 \item{api_key}{Optional API key string. If provided and non-empty,
-this value is returned. Otherwise the function reads \code{OKALA_API_KEY}.}
+this value is returned. Otherwise the function reads \code{NATURECUBE_API_KEY}.}
 }
 \value{
 The API key as a character string
 }
 \description{
-Retrieves the API key from the environment variable OKALA_API_KEY.
+Retrieves the API key from the environment variable NATURECUBE_API_KEY.
 You may also pass \code{api_key} directly for local testing.
 If neither is set, an error is raised. # nolint
 }

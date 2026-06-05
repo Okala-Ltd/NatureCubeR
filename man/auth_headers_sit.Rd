@@ -4,12 +4,12 @@
 \alias{auth_headers_sit}
 \title{Initiate root URL with API key (Development)}
 \usage{
-auth_headers_sit(api_key, okala_url = "https://sit.naturecube.io/api")
+auth_headers_sit(api_key, NATURECUBE_URL = "https://sit.naturecube.io/api")
 }
 \arguments{
 \item{api_key}{A valid API key}
 
-\item{okala_url}{The base URL for the Okala dev API (default: dev)}
+\item{NATURECUBE_URL}{The base URL for the Okala dev API (default: dev)}
 }
 \value{
 A list containing the root URL and the API key
