@@ -560,6 +560,7 @@ list_systems <- function(schema) {
         procedure_index = NA_integer_,
         procedure_name  = NA_character_,
         procedure_id    = NA_integer_,
+        form            = NA,
         stringsAsFactors = FALSE
       )
       next
@@ -569,6 +570,7 @@ list_systems <- function(schema) {
       proc      <- sys$procedures[[pi]]
       proc_name <- as.character(proc$procedure_name %||% "")
       proc_id   <- if (!is.null(proc$procedure_id)) as.integer(proc$procedure_id) else NA_integer_
+      proc_form <- if (!is.null(proc$form)) as.logical(proc$form) else NA
 
       rows[[length(rows) + 1]] <- data.frame(
         system_index    = si,
@@ -577,6 +579,7 @@ list_systems <- function(schema) {
         procedure_index = pi,
         procedure_name  = proc_name,
         procedure_id    = proc_id,
+        form            = proc_form,
         stringsAsFactors = FALSE
       )
     }
@@ -609,9 +612,9 @@ list_systems <- function(schema) {
 #'   (resolves to 1 if \code{procedure_name} is also absent).
 #'
 #' @return A data frame (invisibly) with one row per item and columns
-#'   \code{order}, \code{item_name}, \code{item_type}, \code{item_uuid},
-#'   \code{required}, and \code{choices}. The data frame is also printed to
-#'   the console.
+#'   \code{item_id}, \code{item_uuid}, \code{item_name}, \code{item_description},
+#'   \code{data_type}, \code{nullable}, and \code{choices}. The data frame is
+#'   also printed to the console.
 #'
 #' @examples
 #' \dontrun{
@@ -689,12 +692,13 @@ describe_procedure <- function(schema,
     }
 
     data.frame(
-      order     = i,
-      item_name = as.character(item_name %||% ""),
-      item_type = item_type,
-      item_uuid = as.character(node$item_uuid),
-      required  = req_str,
-      choices   = choices_str,
+      item_id          = if (!is.null(node$item_id)) as.integer(node$item_id) else NA_integer_,
+      item_uuid        = as.character(node$item_uuid),
+      item_name        = as.character(item_name %||% ""),
+      item_description = as.character(node$item_description %||% NA_character_),
+      data_type        = as.character(node$data_type %||% ""),
+      nullable         = if (!is.null(node$nullable)) as.logical(node$nullable) else NA,
+      choices          = choices_str,
       stringsAsFactors = FALSE
     )
   })
@@ -704,9 +708,10 @@ describe_procedure <- function(schema,
 
   sys_name  <- as.character(system$system_name %||% paste("System", idx$system_index))
   proc_name <- as.character(procedure$procedure_name %||% paste("Procedure", idx$procedure_index))
+  proc_form <- if (!is.null(procedure$form)) as.logical(procedure$form) else NA
 
   message("System: ", sys_name)
-  message("Procedure: ", proc_name)
+  message("Procedure: ", proc_name, " (form: ", proc_form, ")")
   message("Items (", nrow(result), "):")
   print(result)
   return(invisible(result))

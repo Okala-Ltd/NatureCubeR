@@ -31,14 +31,16 @@ api_key <- get_key()
 hdr <- auth_headers(api_key)
 
 get_project(hdr)
+
 # ----------------------------------------------------------------------------
 # 2. Fetch reference schema first
 # ----------------------------------------------------------------------------
 
 reference_schema <- get_project_schema(hdr)
+
 list_systems(reference_schema)
 
-describe_procedure(reference_schema,
+procedure <- describe_procedure(reference_schema,
                    system_name    = "Plante Ivindo",
                    procedure_name = "Arbre")
 
