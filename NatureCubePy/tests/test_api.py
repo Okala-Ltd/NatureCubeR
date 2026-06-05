@@ -61,19 +61,19 @@ class TestAuthHeaders:
     def test_default_production_url(self):
         hdr = auth_headers("mykey")
         assert hdr["key"] == "mykey"
-        assert hdr["root"] == "https://api.dashboard.okala.io/api/"
+        assert hdr["root"] == "https://api.naturecube.io/api/"
 
     def test_custom_url(self):
         hdr = auth_headers("mykey", okala_url="https://custom.example.com/api/")
         assert hdr["root"] == "https://custom.example.com/api/"
 
     def test_trailing_slash_normalised(self):
-        hdr = auth_headers("mykey", okala_url="https://api.dashboard.okala.io/api")
+        hdr = auth_headers("mykey", okala_url="https://api.naturecube.io/api/api")
         assert hdr["root"].endswith("/")
 
     def test_dev_default_url(self):
         hdr = auth_headers_dev("mykey")
-        assert hdr["root"] == "https://dev.api.dashboard.okala.io/api/"
+        assert hdr["root"] == "https://sit.api.naturecube.io/api/"
 
 
 # ---------------------------------------------------------------------------

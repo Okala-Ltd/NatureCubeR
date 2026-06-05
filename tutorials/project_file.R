@@ -1,7 +1,7 @@
 source('R/api.R')
 
 # Your api key is found in your project settings on the Okala dashboard.
-# You can find the Okala dashboard here: https://dashboard.okala.io/
+# You can find the Okala dashboard here: https://naturecube.io/api/
 
 api_key <- get_key()
 # Set auth headers appropriately

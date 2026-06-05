@@ -17,8 +17,8 @@ import geopandas as gpd
 import httpx
 import pandas as pd
 
-_PROD_URL = "https://api.dashboard.okala.io/api/"
-_DEV_URL = "https://dev.api.dashboard.okala.io/api/"
+_PROD_URL = "https://api.naturecube.io/api/"
+_DEV_URL = "https://sit.api.naturecube.io/api/"
 
 
 def get_key() -> str:
@@ -69,7 +69,7 @@ def auth_headers(
     --------
     >>> hdr = auth_headers("mykey")
     >>> hdr["root"]
-    'https://api.dashboard.okala.io/api/'
+    'https://api.naturecube.io/api/'
     """
     return {"key": api_key, "root": okala_url.rstrip("/") + "/"}
 
@@ -96,7 +96,7 @@ def auth_headers_dev(
     --------
     >>> hdr = auth_headers_dev("mykey")
     >>> hdr["root"]
-    'https://dev.api.dashboard.okala.io/api/'
+    'https://dev.api.naturecube.io/api/'
     """
     return {"key": api_key, "root": okala_url.rstrip("/") + "/"}
 

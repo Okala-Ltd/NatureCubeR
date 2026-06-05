@@ -498,7 +498,21 @@ return(list(
 #' @export
 get_project_schema <- function(hdr) {
   urlreq <- httr2::req_url_path_append(hdr$root, "getProjectSchema", hdr$key)
-  response <- httr2::req_perform(urlreq)
+  response <- tryCatch(
+    httr2::req_perform(urlreq),
+    error = function(e) {
+      req_url <- urlreq$url
+      stop(
+        paste0(
+          "Failed to fetch project schema from ", req_url, ". ",
+          "If you are running locally, confirm the endpoint exists: ",
+          "GET /api/getProjectSchema/{api_key}. Original error: ",
+          conditionMessage(e)
+        ),
+        call. = FALSE
+      )
+    }
+  )
   return(httr2::resp_body_json(response))
 }
 

@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.Renviron
 okalaR.Rcheck
 /data
 /R/project_file.R

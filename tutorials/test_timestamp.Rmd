@@ -17,11 +17,11 @@ This tutorial demonstrates how to update media file timestamps using the `okalaR
 
 ## Authentication
 
-Your API key is found in your project settings on the Okala dashboard: [https://dashboard.okala.io/](https://dashboard.okala.io/)
+Your API key is found in your project settings on the Okala dashboard: [https://naturecube.io/api/](https://naturecube.io/api/)
 
 ```{r auth, eval=FALSE}
 api_key <- get_key()
-headers <- auth_headers(api_key, okala_url = "https://api.dashboard.okala.io/api/")
+headers <- auth_headers(api_key, okala_url = "https://api.naturecube.io/api/")
 ```
 
 ## Get Project Information

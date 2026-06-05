@@ -7,33 +7,65 @@
 # 4) Build observations for uploadObservations
 # 5) Dry-run or upload
 
-library(okalaR)
-source("R/phone_observations.R") # for internal helper functions
-source("R/auth.R") # for get_key() and auth_headers()
+if (!requireNamespace("devtools", quietly = TRUE)) {
+  stop("Package 'devtools' is required for local testing. Install with install.packages('devtools').")
+}
+
+# Load package code from this local repository so changes on your current branch are used.
+repo_root <- if (file.exists("DESCRIPTION") && dir.exists("R")) "." else ".."
+if (!file.exists(file.path(repo_root, "DESCRIPTION")) || !dir.exists(file.path(repo_root, "R"))) {
+  stop("Could not find package root. Run this script from the repo root or the tutorials/ folder.")
+}
+devtools::load_all(repo_root, quiet = TRUE)
 # ----------------------------------------------------------------------------
 # 1. Authentication
 # ----------------------------------------------------------------------------
 
 api_key <- get_key()
 
-# Use production:
-hdr <- auth_headers(api_key)
+
+# Optional for local one-off testing (avoid committing real keys):
+# api_key <- get_key(api_key = "your_api_key_here")
+
+# Set your API base URL (works for local, dev, or production)
+okala_url <- Sys.getenv("OKALA_URL", unset = "https://api.naturecube.io/api/")
+# For local testing, e.g.:
+# okala_url <- "http://localhost:8000/api"
+
+hdr <- auth_headers(api_key, okala_url = okala_url)
+
 
 # Or use development:
 # hdr <- auth_headers_dev(api_key)
 
 # ----------------------------------------------------------------------------
-# 2. Input CSV
+# 2. Fetch reference schema first
 # ----------------------------------------------------------------------------
 
-csv_path <- "tutorials/example_observation_data.csv"
+reference_schema <- get_project_schema(hdr)
+
+system_names <- vapply(
+  reference_schema$systems,
+  function(x) if (!is.null(x$system_name)) as.character(x$system_name) else "",
+  character(1)
+)
+
+cat("Fetched schema with", length(system_names), "system(s).\n")
+cat("Systems:\n")
+print(system_names)
+
+# ----------------------------------------------------------------------------
+# 3. Input CSV
+# ----------------------------------------------------------------------------
+
+csv_path <- file.path(repo_root, "tutorials", "example_observation_data.csv")
 
 if (!file.exists(csv_path)) {
   stop("CSV file not found at: ", csv_path)
 }
 
 # ----------------------------------------------------------------------------
-# 3. Dry run (recommended first)
+# 4. Dry run (recommended first)
 # ----------------------------------------------------------------------------
 
 # This will:
@@ -62,7 +94,7 @@ if (nrow(dry_run_result$unresolved_rows) > 0) {
 }
 
 # ----------------------------------------------------------------------------
-# 4. Upload for real
+# 5. Upload for real
 # ----------------------------------------------------------------------------
 
 # Uncomment when the dry run looks correct.

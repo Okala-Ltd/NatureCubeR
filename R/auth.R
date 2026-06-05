@@ -2,22 +2,35 @@
 #'
 #' @description
 #' Retrieves the API key from the environment variable OKALA_API_KEY.
-#' If the variable is not set, an error is raised. # nolint
+#' You may also pass `api_key` directly for local testing.
+#' If neither is set, an error is raised. # nolint
+#'
+#' @param api_key Optional API key string. If provided and non-empty,
+#'   this value is returned. Otherwise the function reads `OKALA_API_KEY`.
 #'
 #' @return The API key as a character string
 #'
 #' @examples
 #' \dontrun{
 #'   api_key <- get_key()
+#'   api_key <- get_key(api_key = "your_api_key")
 #' }
 #'
 #' @author
 #' Adam Varley
 #' @export
-get_key <- function() {
-  api_key <- Sys.getenv("OKALA_API_KEY")
-  if (api_key == "") stop("OKALA_API_KEY environment variable not set.")
-  return(api_key)
+get_key <- function(api_key = NULL) {
+  if (!is.null(api_key) && nzchar(api_key)) {
+    return(api_key)
+  }
+
+  api_key_env <- Sys.getenv("OKALA_API_KEY")
+  if (api_key_env == "") {
+    stop(
+      "No API key found. Set OKALA_API_KEY or pass api_key to get_key(api_key = ...)."
+    )
+  }
+  return(api_key_env)
 }
 
 #' @title Initiate root URL with API key
@@ -41,7 +54,7 @@ get_key <- function() {
 #' Adam Varley
 #' @export
 auth_headers <- function(api_key,
-                         okala_url = "https://api.dashboard.okala.io/api/") {
+                         okala_url = "https://naturecube.io/api/") {
   root <- httr2::request(okala_url)
   d <- list(key = api_key,
             root = root)
@@ -69,7 +82,7 @@ auth_headers <- function(api_key,
 #' @export
 auth_headers_dev <- function(
     api_key,
-    okala_url = "https://dev.api.dashboard.okala.io/api/") {
+    okala_url = "https://sit.api.naturecube.io/api/") {
   root <- httr2::request(okala_url)
   d <- list(key = api_key,
             root = root)
