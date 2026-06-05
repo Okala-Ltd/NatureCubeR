@@ -517,6 +517,202 @@ get_project_schema <- function(hdr) {
 }
 
 
+#' @title List Systems and Procedures
+#'
+#' @description
+#' Displays a summary of all systems and their procedures available in the
+#' project schema. Use this to discover valid system/procedure name combinations
+#' before submitting observations.
+#'
+#' @param schema List. Project schema returned by \code{get_project_schema()}.
+#'
+#' @return A data frame (invisibly) with columns \code{system_index},
+#'   \code{system_name}, \code{system_id}, \code{procedure_index},
+#'   \code{procedure_name}, and \code{procedure_id}. The data frame is also
+#'   printed to the console.
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   schema <- get_project_schema(hdr)
+#'   list_systems(schema)
+#' }
+#'
+#' @author Adam Varley
+#' @export
+list_systems <- function(schema) {
+  if (is.null(schema$systems) || length(schema$systems) == 0) {
+    message("No systems found in schema.")
+    return(invisible(data.frame()))
+  }
+
+  rows <- list()
+  for (si in seq_along(schema$systems)) {
+    sys      <- schema$systems[[si]]
+    sys_name <- as.character(sys$system_name %||% "")
+    sys_id   <- if (!is.null(sys$project_system_id)) as.integer(sys$project_system_id) else NA_integer_
+
+    if (is.null(sys$procedures) || length(sys$procedures) == 0) {
+      rows[[length(rows) + 1]] <- data.frame(
+        system_index    = si,
+        system_name     = sys_name,
+        system_id       = sys_id,
+        procedure_index = NA_integer_,
+        procedure_name  = NA_character_,
+        procedure_id    = NA_integer_,
+        stringsAsFactors = FALSE
+      )
+      next
+    }
+
+    for (pi in seq_along(sys$procedures)) {
+      proc      <- sys$procedures[[pi]]
+      proc_name <- as.character(proc$procedure_name %||% "")
+      proc_id   <- if (!is.null(proc$procedure_id)) as.integer(proc$procedure_id) else NA_integer_
+
+      rows[[length(rows) + 1]] <- data.frame(
+        system_index    = si,
+        system_name     = sys_name,
+        system_id       = sys_id,
+        procedure_index = pi,
+        procedure_name  = proc_name,
+        procedure_id    = proc_id,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  result <- do.call(rbind, rows)
+  rownames(result) <- NULL
+  print(result)
+  return(invisible(result))
+}
+
+
+#' @title Describe Procedure Items
+#'
+#' @description
+#' Returns a detailed table of all items (fields) in a selected procedure,
+#' including item names, UUIDs, types, and valid choices where applicable.
+#' Use this to understand exactly what data to submit and how to structure it
+#' before calling \code{build_upload_observation()} or
+#' \code{upload_observations_from_csv()}.
+#'
+#' @param schema List. Project schema returned by \code{get_project_schema()}.
+#' @param system_name Character. Name of the system. Optional; takes precedence
+#'   over \code{system_index} when provided.
+#' @param system_index Integer. Index of the system. Default \code{NULL}
+#'   (resolves to 1 if \code{system_name} is also absent).
+#' @param procedure_name Character. Name of the procedure. Optional; takes
+#'   precedence over \code{procedure_index} when provided.
+#' @param procedure_index Integer. Index of the procedure. Default \code{NULL}
+#'   (resolves to 1 if \code{procedure_name} is also absent).
+#'
+#' @return A data frame (invisibly) with one row per item and columns
+#'   \code{order}, \code{item_name}, \code{item_type}, \code{item_uuid},
+#'   \code{required}, and \code{choices}. The data frame is also printed to
+#'   the console.
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   schema <- get_project_schema(hdr)
+#'
+#'   # Explore using names
+#'   describe_procedure(schema,
+#'     system_name = "Plante Ivindo",
+#'     procedure_name = "Arbre")
+#'
+#'   # Or by index
+#'   describe_procedure(schema, system_index = 1, procedure_index = 2)
+#' }
+#'
+#' @author Adam Varley
+#' @export
+describe_procedure <- function(schema,
+                               system_name = NULL,
+                               system_index = NULL,
+                               procedure_name = NULL,
+                               procedure_index = NULL) {
+
+  idx <- resolve_schema_indices(
+    schema          = schema,
+    system_index    = system_index,
+    procedure_index = procedure_index,
+    system_name     = system_name,
+    procedure_name  = procedure_name
+  )
+
+  system    <- schema$systems[[idx$system_index]]
+  procedure <- system$procedures[[idx$procedure_index]]
+
+  item_nodes <- collect_item_nodes(procedure)
+
+  if (length(item_nodes) == 0) {
+    message("No items found in selected procedure.")
+    return(invisible(data.frame()))
+  }
+
+  rows <- lapply(seq_along(item_nodes), function(i) {
+    node <- item_nodes[[i]]
+
+    # Resolve display name
+    item_name <- node$item_name
+    if (is.null(item_name) || identical(item_name, "")) item_name <- node$name
+    if (is.null(item_name) || identical(item_name, "")) item_name <- node$label
+    if (is.null(item_name) || identical(item_name, "")) item_name <- node$title
+
+    # Resolve type
+    item_type <- as.character(node$item_type %||% node$type %||% "")
+
+    # Resolve choices for choice-type items
+    choice_vals <- node$choices %||% node$options %||% node$items
+    choices_str <- ""
+    if (!is.null(choice_vals) && length(choice_vals) > 0) {
+      choice_labels <- vapply(choice_vals, function(ch) {
+        if (!is.list(ch)) return(as.character(ch))
+        lbl <- ch$label %||% ch$value %||% ch$name %||% ch$choice_label
+        if (is.null(lbl)) lbl <- as.character(ch)
+        as.character(lbl)
+      }, character(1))
+      choices_str <- paste(choice_labels, collapse = " | ")
+    }
+
+    # Resolve required flag
+    req_val <- node$required %||% node$is_required
+    if (is.null(req_val)) {
+      req_str <- ""
+    } else if (is.logical(req_val)) {
+      req_str <- ifelse(isTRUE(req_val), "yes", "no")
+    } else {
+      req_str <- as.character(req_val)
+    }
+
+    data.frame(
+      order     = i,
+      item_name = as.character(item_name %||% ""),
+      item_type = item_type,
+      item_uuid = as.character(node$item_uuid),
+      required  = req_str,
+      choices   = choices_str,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  result <- do.call(rbind, rows)
+  rownames(result) <- NULL
+
+  sys_name  <- as.character(system$system_name %||% paste("System", idx$system_index))
+  proc_name <- as.character(procedure$procedure_name %||% paste("Procedure", idx$procedure_index))
+
+  message("System: ", sys_name)
+  message("Procedure: ", proc_name)
+  message("Items (", nrow(result), "):")
+  print(result)
+  return(invisible(result))
+}
+
+
 #' @title Build Upload Observation
 #'
 #' @description

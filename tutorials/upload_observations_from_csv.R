@@ -36,12 +36,11 @@ get_project(hdr)
 # ----------------------------------------------------------------------------
 
 reference_schema <- get_project_schema(hdr)
+list_systems(reference_schema)
 
-system_names <- vapply(
-  reference_schema$systems,
-  function(x) if (!is.null(x$system_name)) as.character(x$system_name) else "",
-  character(1)
-)
+describe_procedure(reference_schema,
+                   system_name    = "Plante Ivindo",
+                   procedure_name = "Arbre")
 
 cat("Fetched schema with", length(system_names), "system(s).\n")
 cat("Systems:\n")
