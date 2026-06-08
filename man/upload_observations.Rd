@@ -12,6 +12,9 @@ upload_observations(hdr, observations, dry_run_payload = FALSE)
 
 \item{observations}{List of observations created with
 \code{build_upload_observation()}.}
+
+\item{dry_run_payload}{Logical. If \code{TRUE}, returns the request payload
+without sending it to the API. Default \code{FALSE}.}
 }
 \value{
 Parsed API response as a list.

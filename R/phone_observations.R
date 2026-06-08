@@ -744,11 +744,11 @@ get_procedure <- function(schema,
 #' \code{get_procedure()}. Two CSV layouts are supported and
 #' auto-detected:
 #'
-#' \strong{Long format} — one row per observation item. Has an
+#' \strong{Long format} -- one row per observation item. Has an
 #' \code{item_name} column and a \code{data} column. Rows sharing the
 #' same lat/lon will become observations under the same parent feature.
 #'
-#' \strong{Wide format} — one row per feature. Procedure item names are
+#' \strong{Wide format} -- one row per feature. Procedure item names are
 #' spread as column headers; each row contains all item values for one
 #' feature. Must still have \code{longitude}, \code{latitude}, and
 #' \code{recorded_at} columns.
@@ -912,7 +912,7 @@ validate_csv_against_procedure <- function(procedure,
       print(required_miss[, c("item_name", "data_type", "nullable"), drop = FALSE])
     }
     if (nrow(optional_miss) > 0) {
-      message("\nMissing nullable/optional items (", nrow(optional_miss), ") — allowed:")
+      message("\nMissing nullable/optional items (", nrow(optional_miss), ") \u2014 allowed:")
       print(optional_miss[, c("item_name", "data_type", "nullable"), drop = FALSE])
     }
   }
@@ -1027,7 +1027,7 @@ validate_csv_against_procedure <- function(procedure,
   if (nrow(optional_missing) > 0) message("Note: ", nrow(optional_missing), " nullable item(s) absent from CSV (allowed): ", paste(optional_missing$item_name, collapse = ", "))
   if (length(unrecognised_names) > 0) issues <- c(issues, paste(length(unrecognised_names), "CSV column(s) not found in procedure:", paste(unrecognised_names, collapse = ", ")))
 
-  # Data type checks — one cell per matched column per row
+  # Data type checks -- one cell per matched column per row
   type_rows <- list()
   for (col in item_cols) {
     nm <- normalize_lookup_value(col)
@@ -1047,7 +1047,7 @@ validate_csv_against_procedure <- function(procedure,
   }
   if (nrow(type_issues) > 0) issues <- c(issues, paste(nrow(type_issues), "data type issue(s) found (see $type_issues)"))
 
-  # Feature grouping — each row is already one feature
+  # Feature grouping -- each row is already one feature
   feature_groups <- data.frame(
     longitude  = if (lon_col %in% names(csv)) suppressWarnings(as.numeric(csv[[lon_col]])) else rep(NA_real_, nrow(csv)),
     latitude   = if (lat_col %in% names(csv)) suppressWarnings(as.numeric(csv[[lat_col]])) else rep(NA_real_, nrow(csv)),
@@ -1280,6 +1280,8 @@ build_upload_observation <- function(schema,
 #'   \link{auth_headers_dev}.
 #' @param observations List of observations created with
 #'   \code{build_upload_observation()}.
+#' @param dry_run_payload Logical. If \code{TRUE}, returns the request payload
+#'   without sending it to the API. Default \code{FALSE}.
 #'
 #' @return Parsed API response as a list.
 #'
@@ -1510,7 +1512,7 @@ resolve_schema_indices <- function(schema,
 #' @param observation_id_col Character name of observation ID column.
 #'   Default \code{"observation_id"}.
 #' @param recorded_at_format Optional timestamp parsing format.
-#'   Default \code{"%d/%m/%Y %H:%M"}.
+#'   Default \code{"\%d/\%m/\%Y \%H:\%M"}.
 #' @param timezone Timezone used when parsing non-ISO timestamps. Default \code{"UTC"}.
 #'
 #' @return A list with \code{observations}, \code{unresolved_rows}, and
@@ -1946,7 +1948,7 @@ for (i in seq_along(feature_payload)) {
       response = resp_body
     )
 
-    message("  ✓ Feature ", feature_uuid, " uploaded successfully")
+    message("  \u2713 Feature ", feature_uuid, " uploaded successfully")
 
   }, error = function(e) {
     # Record failure
@@ -1956,7 +1958,7 @@ for (i in seq_along(feature_payload)) {
       error = error_msg
     )
 
-    message("  ✗ Feature ", feature_uuid, " failed: ", error_msg)
+    message("  \u2717 Feature ", feature_uuid, " failed: ", error_msg)
   })
 }
 

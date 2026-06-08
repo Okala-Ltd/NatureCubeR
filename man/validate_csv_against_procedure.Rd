@@ -56,11 +56,11 @@ Checks an observation CSV against a procedure object returned by
 \code{get_procedure()}. Two CSV layouts are supported and
 auto-detected:
 
-\strong{Long format} — one row per observation item. Has an
+\strong{Long format} -- one row per observation item. Has an
 \code{item_name} column and a \code{data} column. Rows sharing the
 same lat/lon will become observations under the same parent feature.
 
-\strong{Wide format} — one row per feature. Procedure item names are
+\strong{Wide format} -- one row per feature. Procedure item names are
 spread as column headers; each row contains all item values for one
 feature. Must still have \code{longitude}, \code{latitude}, and
 \code{recorded_at} columns.

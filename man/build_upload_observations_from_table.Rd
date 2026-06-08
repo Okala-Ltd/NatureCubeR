@@ -65,6 +65,9 @@ Default \code{"numbers"}.}
 \item{observation_id_col}{Character name of observation ID column.
 Default \code{"observation_id"}.}
 
+\item{recorded_at_format}{Optional timestamp parsing format.
+Default \code{"\%d/\%m/\%Y \%H:\%M"}.}
+
 \item{timezone}{Timezone used when parsing non-ISO timestamps. Default \code{"UTC"}.}
 }
 \value{

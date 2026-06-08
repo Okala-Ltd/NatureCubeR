@@ -10,8 +10,8 @@ auth_headers(
 )
 }
 \arguments{
-\item{api_key}{A valid API key. If omitted, reads `NATURECUBE_API_KEY`
-via \\code{get_key()}.}
+\item{api_key}{A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
+via \code{get_key()}.}
 
 \item{NATURECUBE_URL}{The base URL for the API. If omitted, reads
 `NATURECUBE_URL` from the environment and falls back to production.}

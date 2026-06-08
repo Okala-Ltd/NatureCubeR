@@ -42,8 +42,8 @@ get_key <- function(api_key = NULL) {
 #' This requires a project API key, which can be obtained directly from the
 #' Okala dashboard.
 #'
-#' @param api_key A valid API key. If omitted, reads `NATURECUBE_API_KEY`
-#'   via \\code{get_key()}.
+#' @param api_key A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
+#'   via \code{get_key()}.
 #' @param NATURECUBE_URL The base URL for the API. If omitted, reads
 #'   `NATURECUBE_URL` from the environment and falls back to production.
 #'
@@ -75,8 +75,8 @@ auth_headers <- function(api_key = get_key(),
 #' Creates a base URL object for the development Okala API.
 #' Requires a project API key.
 #'
-#' @param api_key A valid API key. If omitted, reads `NATURECUBE_API_KEY`
-#'   via \\code{get_key()}.
+#' @param api_key A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
+#'   via \code{get_key()}.
 #' @param NATURECUBE_URL The base URL for the SIT API. If omitted, reads
 #'   `NATURECUBE_SIT_URL` and falls back to the SIT default URL.
 #'

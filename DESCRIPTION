@@ -6,8 +6,7 @@ Authors@R:
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
 Description: Allows basic reading and writing of data to and from your 
     project on the okala dashboard.
-License: Apache License 2.0
-License_file: LICENSE
+License: Apache License (>= 2.0) | file LICENSE
 Encoding: UTF-8
 Imports:
     httr2,
@@ -19,5 +18,6 @@ Imports:
     sf,
     scales,
     magrittr,
-    uuid
+    uuid,
+    curl
 Config/roxygen2/version: 8.0.0

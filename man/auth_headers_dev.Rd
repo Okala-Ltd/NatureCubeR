@@ -11,8 +11,8 @@ auth_headers_dev(
 )
 }
 \arguments{
-\item{api_key}{A valid API key. If omitted, reads `NATURECUBE_API_KEY`
-via \\code{get_key()}.}
+\item{api_key}{A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
+via \code{get_key()}.}
 
 \item{NATURECUBE_URL}{The base URL for the SIT API. If omitted, reads
 `NATURECUBE_SIT_URL` and falls back to the SIT default URL.}

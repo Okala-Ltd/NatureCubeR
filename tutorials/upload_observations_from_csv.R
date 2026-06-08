@@ -46,14 +46,17 @@ procedure <- get_procedure(project_systems,
                    system_name    = "Plante Ivindo",
                    procedure_name = "Arbre")
 
-csv_path <- file.path(repo_root, "tutorials", "example_observation_data.csv")
+csv_path <- file.path(repo_root, "tutorials", "data", "example_observation_data.csv")
 
-# Validate the CSV against the procedure before attempting upload. This checks for missing required columns and other common issues.
+# ----------------------------------------------------------------------------
+# 3. Validate the CSV against the procedure
+# ----------------------------------------------------------------------------
+
+# Checks for missing required columns and other common issues before upload.
 validate_csv_against_procedure(
   procedure = procedure,
   csv_path  = csv_path
 )
-
 
 # ----------------------------------------------------------------------------
 # 4. Dry run (recommended first)
