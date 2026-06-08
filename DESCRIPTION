@@ -1,7 +1,7 @@
 Package: NatureCubeR
 Type: Package
 Title: API wrapper around the okala dashboard interface
-Version: 1.1.8
+Version: 1.1.9
 Authors@R: 
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
 Description: Allows basic reading and writing of data to and from your 
@@ -9,7 +9,6 @@ Description: Allows basic reading and writing of data to and from your
 License: Apache License 2.0
 License_file: LICENSE
 Encoding: UTF-8
-RoxygenNote: 7.3.2
 Imports:
     httr2,
     jsonlite,
@@ -21,3 +20,4 @@ Imports:
     scales,
     magrittr,
     uuid
+Config/roxygen2/version: 8.0.0

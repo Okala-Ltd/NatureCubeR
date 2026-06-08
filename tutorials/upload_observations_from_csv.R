@@ -33,20 +33,25 @@ hdr <- auth_headers(api_key)
 # get_project(hdr)
 
 # ----------------------------------------------------------------------------
-# 2. Fetch reference schema first
+# 2. Fetch project systems first
 # ----------------------------------------------------------------------------
 
-reference_schema <- get_project_schema(hdr)
+project_systems <- get_project_systems(hdr)
 
-list_systems(reference_schema)
+# List systems and procedures to find the names you want to use in the CSV. You can also get this info from the web app or ask your administrator.
+list_systems(project_systems)
 
-procedure <- get_procedure(reference_schema,
+# Get a specific procedure by name. This is needed to understand the expected schema and map item names to UUIDs.
+procedure <- get_procedure(project_systems,
                    system_name    = "Plante Ivindo",
                    procedure_name = "Arbre")
 
+csv_path <- file.path(repo_root, "tutorials", "example_observation_data.csv")
+
+# Validate the CSV against the procedure before attempting upload. This checks for missing required columns and other common issues.
 validate_csv_against_procedure(
   procedure = procedure,
-  csv_path  = file.path(repo_root, "tutorials", "example_observation_data.csv")
+  csv_path  = csv_path
 )
 
 
@@ -60,39 +65,16 @@ validate_csv_against_procedure(
 # - map item_name -> item_uuid where item_uuid is missing
 # - build observations grouped by observation_id or lon/lat/time
 # - return a payload preview without uploading
+# - Currently the user can upload simple observations with item_name and value, but not complex observations with nested sub-observations. Support for this is coming soon. 
+# - Also this only supports simple point data. Not polygons or lines. Support for this is also coming soon.
 
 dry_run_result <- upload_observations_from_csv(
-  hdr = hdr,
-  csv_path = csv_path,
-  system_name = "Plante Ivindo",
-  procedure_name = "Arbre",
-  dry_run = TRUE,
+  hdr       = hdr,
+  csv_path  = csv_path,
+  procedure = procedure,
+  dry_run   = FALSE,
   recorded_at_format = "%d/%m/%Y %H:%M"
 )
 
-cat("Built observations:", length(dry_run_result$observations), "\n")
-cat("Resolved rows:", dry_run_result$resolved_rows, "\n")
-cat("Unresolved rows:", nrow(dry_run_result$unresolved_rows), "\n")
 
-if (nrow(dry_run_result$unresolved_rows) > 0) {
-  cat("Rows with unresolved item mapping (first 10):\n")
-  print(utils::head(dry_run_result$unresolved_rows, 10))
-}
 
-# ----------------------------------------------------------------------------
-# 5. Upload for real
-# ----------------------------------------------------------------------------
-
-# Uncomment when the dry run looks correct.
-
-# upload_result <- upload_observations_from_csv(
-#   hdr = hdr,
-#   csv_path = csv_path,
-#   system_name = "Plante Ivindo",
-#   procedure_name = "Arbre",
-#   dry_run = FALSE,
-#   recorded_at_format = "%d/%m/%Y %H:%M"
-# )
-#
-# print(upload_result$response)
-# cat("Uploaded observations:", length(upload_result$observations), "\n")
