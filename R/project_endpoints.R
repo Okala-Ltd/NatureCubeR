@@ -127,18 +127,45 @@ plot_stations <- function(geojson_response) {
 #' @author
 #' Adam Varley
 #' @export
-get_media_assets <- function(hdr,
-                             datatype = c("video", "audio", "image", "eDNA"),
-                             psrID) {
+get_media_assets <- function(hdr, 
+                              datatype = c("video", "audio", "image", "eDNA"), 
+                              station_ids,
+                              limit = 1000) {
+  
+  all_results <- list()
+  offset      <- 0
+  psrID       <- station_ids$project_system_record_id
 
-  urlreq_ap <- httr2::req_url_path_append(
-    hdr$root, "getMediaAssets", datatype, hdr$key) %>%
-    httr2::req_method("POST") %>%
-    httr2::req_body_json(data = psrID)
+  if (sum(station_ids$record_count) > 4000){
+    cat("Total number of records greater than 4000, please run it in chunks")
+  }
 
-  preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
-  resp <- httr2::resp_body_string(preq)
+  pb <- cli::cli_progress_bar(
+    format      = "Fetching media assets | {cli::pb_current} records | [{cli::pb_bar}] {cli::pb_percent} | ETA {cli::pb_eta}",
+    total       = sum(station_ids$record_count),
+    clear       = FALSE
+  )
 
-  return(jsonlite::fromJSON(resp) %>% tibble::as_tibble())
+  repeat {
+    urlreq_ap <- httr2::req_url_path_append(hdr$root, "getMediaAssets", datatype, hdr$key) %>% 
+      httr2::req_method("POST") %>% 
+      httr2::req_url_query(offset = offset, limit = limit) %>% 
+      httr2::req_body_json(data = as.list(psrID))
+
+    resp <- httr2::req_perform(urlreq_ap) %>% 
+      httr2::resp_body_string() %>% 
+      jsonlite::fromJSON()
+    
+    batch <- tibble::as_tibble(resp)
+    all_results[[length(all_results) + 1]] <- batch
+    offset <- offset + nrow(batch)
+
+    cli::cli_progress_update(id = pb, inc = nrow(batch))
+    Sys.sleep(0.5)
+
+    if (nrow(batch) < limit) break
+  }
+  cli::cli_progress_done(id = pb)
+  dplyr::bind_rows(all_results)
 
 }
