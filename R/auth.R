@@ -94,7 +94,7 @@ auth_headers_dev <- function(
     api_key = get_key(),
     NATURECUBE_URL = Sys.getenv(
       "NATURECUBE_SIT_URL",
-      unset = "https://sit.api.naturecube.io/api/"
+      unset = "https://sit.naturecube.io/api/"
     )) {
   NATURECUBE_URL <- gsub("^['\"]|['\"]$", "", NATURECUBE_URL)
   root <- httr2::request(NATURECUBE_URL)
@@ -102,3 +102,4 @@ auth_headers_dev <- function(
             root = root)
   return(d)
 }
+
