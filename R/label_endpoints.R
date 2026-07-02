@@ -253,3 +253,39 @@ set_segment_blank_status <- function(hdr, blank_status, segment_record_ids) {
   message(resp$message)
   return(resp)
 }
+
+#' @title Set publish status for segment records
+#'
+#' @description
+#' Marks or unmarks segment records as published for a given list of segment record IDs.
+#'
+#' @param hdr A base URL provided and valid API key returned by the function \link{auth_headers}.
+#' @param publish_status A boolean value indicating whether to publish (TRUE) or unpublish (FALSE).
+#' @param segment_record_ids A numeric vector of segment record IDs to update.
+#'
+#' @return A list containing the API response message.
+#'
+#' @examples
+#' \dontrun{
+#'   # Publish segments
+#'   publish_segments(headers, publish_status = TRUE, segment_record_ids = c(101, 102, 103))
+#'   # Unpublish segments
+#'   publish_segments(headers, publish_status = FALSE, segment_record_ids = c(101, 102, 103))
+#' }
+#'
+#' @author
+#' Adam Varley
+#' @export
+publish_segments <- function(hdr, publish_status, segment_record_ids) {
+  status_str <- tolower(as.character(publish_status))
+
+  urlreq_ap <- httr2::req_url_path_append(hdr$root, "segmentRecordsPublishStatus", hdr$key, status_str) %>%
+    httr2::req_method("PUT") %>%
+    httr2::req_body_json(data = segment_record_ids)
+
+  preq <- httr2::req_perform(urlreq_ap)
+  resp <- httr2::resp_body_json(preq)
+
+  message(resp$message)
+  return(resp)
+}
