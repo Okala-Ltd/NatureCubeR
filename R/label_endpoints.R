@@ -262,8 +262,10 @@ set_segment_blank_status <- function(hdr, blank_status, segment_record_ids) {
 #' @param hdr A base URL provided and valid API key returned by the function \link{auth_headers}.
 #' @param publish_status A boolean value indicating whether to publish (TRUE) or unpublish (FALSE).
 #' @param segment_record_ids A numeric vector of segment record IDs to update.
+#' @param chunksize An integer specifying how many segment record IDs to send per request.
+#'   Defaults to 500.
 #'
-#' @return A list containing the API response message.
+#' @return A list containing the API response message from the last chunk submitted.
 #'
 #' @examples
 #' \dontrun{
@@ -276,16 +278,25 @@ set_segment_blank_status <- function(hdr, blank_status, segment_record_ids) {
 #' @author
 #' Adam Varley
 #' @export
-publish_segments <- function(hdr, publish_status, segment_record_ids) {
+publish_segments <- function(hdr, publish_status, segment_record_ids, chunksize = 500) {
   status_str <- tolower(as.character(publish_status))
 
-  urlreq_ap <- httr2::req_url_path_append(hdr$root, "segmentRecordsPublishStatus", hdr$key, status_str) %>%
-    httr2::req_method("PUT") %>%
-    httr2::req_body_json(data = segment_record_ids)
+  if (chunksize > length(segment_record_ids)) {
+    chunksize <- length(segment_record_ids)
+  }
 
-  preq <- httr2::req_perform(urlreq_ap)
-  resp <- httr2::resp_body_json(preq)
+  chunks <- split(segment_record_ids, ceiling(seq_along(segment_record_ids) / chunksize))
 
-  message(resp$message)
+  for (i in seq_along(chunks)) {
+    urlreq_ap <- httr2::req_url_path_append(hdr$root, "segmentRecordsPublishStatus", hdr$key, status_str) %>%
+      httr2::req_method("PUT") %>%
+      httr2::req_body_json(data = chunks[[i]])
+
+    preq <- httr2::req_perform(urlreq_ap)
+    resp <- httr2::resp_body_json(preq)
+
+    message('Chunk ', i, '/', length(chunks), ' (', length(chunks[[i]]), ' records) - ', resp$message)
+  }
+
   return(resp)
 }
