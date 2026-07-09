@@ -1,11 +1,11 @@
 Package: NatureCubeR
 Type: Package
-Title: API wrapper around the okala dashboard interface
+Title: API wrapper around the NatureCube dashboard interface
 Version: 1.1.9
 Authors@R: 
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
 Description: Allows basic reading and writing of data to and from your 
-    project on the okala dashboard.
+    project on the NatureCube dashboard.
 License: Apache License (>= 2.0) | file LICENSE
 Encoding: UTF-8
 Imports:

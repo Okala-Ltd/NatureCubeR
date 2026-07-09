@@ -1,7 +1,7 @@
 # =============================================================================
 # Project Data Tutorial
 # =============================================================================
-# This tutorial walks through the core project-data workflow in okalaR:
+# This tutorial walks through the core project-data workflow in NatureCubeR:
 #   1. Authenticate
 #   2. Inspect your project
 #   3. Retrieve station metadata and plot locations
@@ -13,7 +13,7 @@
 # ~/.Renviron, then restart R. See tutorials/auth_tutorial.R for details.
 # =============================================================================
 
-library(okalaR)
+library(NatureCubeR)
 
 # -----------------------------------------------------------------------------
 # Step 1: Authenticate

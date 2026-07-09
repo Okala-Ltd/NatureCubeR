@@ -76,14 +76,13 @@ replace_nas <- function(df) {
 #'
 #' @param hdr A base URL provided and valid API key returned by the function \link{auth_headers}
 #' @param offset An integer specifying the offset for the query
-#' @param limit An integer specifying the limit for the query
 #' @param search_term A character vector specifying the search term to be used (optional)
 #'
 #' @return A list containing tabular data and pagination information for iterative calls
 #'
 #' @examples
 #' \dontrun{
-#'   getIUCNLabels(headers, offset=0, limit=100, search_term="horse")
+#'   getIUCNLabels(headers, offset=0, search_term="horse")
 #' }
 #'
 #' @author

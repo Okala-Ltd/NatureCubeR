@@ -25,7 +25,7 @@ phone_types <- c(
 #'
 #' @description
 #' Constructs a validated device settings list matching the DeviceSettings schema
-#' required by the Okala API.
+#' required by the NatureCube API.
 #'
 #' @param device_id Character. Unique identifier for the device.
 #' @param phone_model Character. Model name of the phone (e.g., "iPhone 14 Pro").
@@ -1794,7 +1794,7 @@ upload_observations_from_csv <- function(hdr,
 #' @title Upload Phone Observations
 #'
 #' @description
-#' Uploads phone observation records to the Okala platform. This function processes
+#' Uploads phone observation records to the NatureCube platform. This function processes
 #' one feature at a time, uploading the feature geometry, its child observations,
 #' and any associated media files (photos, videos, audio) in a single request per feature.
 #'

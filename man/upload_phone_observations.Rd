@@ -36,7 +36,7 @@ A list containing:
   }
 }
 \description{
-Uploads phone observation records to the Okala platform. This function processes
+Uploads phone observation records to the NatureCube platform. This function processes
 one feature at a time, uploading the feature geometry, its child observations,
 and any associated media files (photos, videos, audio) in a single request per feature.
 
