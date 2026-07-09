@@ -89,13 +89,13 @@ replace_nas <- function(df) {
 #' @author
 #' Adam Varley
 #' @export
-getIUCNLabels <- function(hdr, offset, limit, search_term = NULL) {
+getIUCNLabels <- function(hdr, offset, search_term = NULL) {
   if (is.null(search_term)) {
     search_term <- ""
   }
-  if (limit > 20000) {
-    stop("Limit cannot be greater than 20000")
-  }
+
+  limit = API_MAX_LIMIT
+
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "getIUCNLabels", hdr$key)
   urlreq_ap <- urlreq_ap |>
     httr2::req_method("GET") |>
