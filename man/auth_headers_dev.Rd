@@ -7,7 +7,7 @@
 auth_headers_dev(
   api_key = get_key(),
   NATURECUBE_URL = Sys.getenv("NATURECUBE_SIT_URL", unset =
-    "https://sit.api.naturecube.io/api/")
+    "https://sit.naturecube.io/api/")
 )
 }
 \arguments{

@@ -114,14 +114,16 @@ plot_stations <- function(geojson_response) {
 #'   function \link{auth_headers}
 #' @param datatype A character vector of data types
 #'   c("video","audio","image","eDNA")
-#' @param psrID Unique project system ID for which the media assets
-#'   will be retrieved
+#' @param station_ids A tibble of station info (as returned by
+#'   \link{get_station_info}) containing at least \code{project_system_record_id}
+#'   and \code{record_count} columns.
+#' @param limit Maximum number of records to fetch per request. Defaults to 1000.
 #'
 #' @return A tibble of media assets for the specified project system record
 #'
 #' @examples
 #' \dontrun{
-#'   assets <- get_media_assets(headers, datatype="video", psrID=123)
+#'   assets <- get_media_assets(headers, datatype = "video", station_ids = stations)
 #' }
 #'
 #' @author

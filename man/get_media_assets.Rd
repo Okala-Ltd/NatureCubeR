@@ -4,7 +4,12 @@
 \alias{get_media_assets}
 \title{Retrieve media assets for a given project system record ID}
 \usage{
-get_media_assets(hdr, datatype = c("video", "audio", "image", "eDNA"), psrID)
+get_media_assets(
+  hdr,
+  datatype = c("video", "audio", "image", "eDNA"),
+  station_ids,
+  limit = 1000
+)
 }
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the
@@ -13,8 +18,11 @@ function \link{auth_headers}}
 \item{datatype}{A character vector of data types
 c("video","audio","image","eDNA")}
 
-\item{psrID}{Unique project system ID for which the media assets
-will be retrieved}
+\item{station_ids}{A tibble of station info (as returned by
+\link{get_station_info}) containing at least \code{project_system_record_id}
+and \code{record_count} columns.}
+
+\item{limit}{Maximum number of records to fetch per request. Defaults to 1000.}
 }
 \value{
 A tibble of media assets for the specified project system record
@@ -25,7 +33,7 @@ For data types c("video","audio","image")
 }
 \examples{
 \dontrun{
-  assets <- get_media_assets(headers, datatype="video", psrID=123)
+  assets <- get_media_assets(headers, datatype = "video", station_ids = stations)
 }
 
 }
