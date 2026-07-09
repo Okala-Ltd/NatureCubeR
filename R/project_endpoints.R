@@ -131,20 +131,15 @@ plot_stations <- function(geojson_response) {
 #' @export
 get_media_assets <- function(hdr, 
                               datatype = c("video", "audio", "image", "eDNA"), 
-                              station_ids,
-                              limit = 1000) {
+                              psrID) {
   
   all_results <- list()
   offset      <- 0
-  psrID       <- station_ids$project_system_record_id
-
-  if (sum(station_ids$record_count) > 4000){
-    cat("Total number of records greater than 4000, please run it in chunks")
-  }
+  limit = API_MAX_LIMIT
 
   pb <- cli::cli_progress_bar(
-    format      = "Fetching media assets | {cli::pb_current} records | [{cli::pb_bar}] {cli::pb_percent} | ETA {cli::pb_eta}",
-    total       = sum(station_ids$record_count),
+    format      = "Fetching media assets | {cli::pb_current} records | elapsed: {cli::pb_elapsed}",
+    total       = NA,
     clear       = FALSE
   )
 
