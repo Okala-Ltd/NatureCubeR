@@ -4,14 +4,12 @@
 \alias{getIUCNLabels}
 \title{Get labels from the wider IUCN database (all species)}
 \usage{
-getIUCNLabels(hdr, offset, limit, search_term = NULL)
+getIUCNLabels(hdr, offset, search_term = NULL)
 }
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}}
 
 \item{offset}{An integer specifying the offset for the query}
-
-\item{limit}{An integer specifying the limit for the query}
 
 \item{search_term}{A character vector specifying the search term to be used (optional)}
 }
@@ -23,7 +21,7 @@ Retrieve labels from the wider IUCN database, optionally filtered by a search te
 }
 \examples{
 \dontrun{
-  getIUCNLabels(headers, offset=0, limit=100, search_term="horse")
+  getIUCNLabels(headers, offset=0, search_term="horse")
 }
 
 }

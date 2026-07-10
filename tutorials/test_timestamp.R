@@ -2,13 +2,13 @@
 # Media Timestamp Correction Tutorial
 # =============================================================================
 # Use this workflow when media files have been recorded with an incorrect clock
-# and you need to correct timestamps in bulk on the Okala platform.
+# and you need to correct timestamps in bulk on the NatureCube platform.
 #
 # Prerequisites: set NATURECUBE_API_KEY (and optionally NATURECUBE_URL) in
 # ~/.Renviron, then restart R. See tutorials/auth_tutorial.R for details.
 # =============================================================================
 
-library(okalaR)
+library(NatureCubeR)
 library(lubridate)
 
 # -----------------------------------------------------------------------------

@@ -7,14 +7,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(okalaR)
+library(NatureCubeR)
 ```
 
-This document explains how to authenticate with the Okala API using `okalaR`.
+This document explains how to authenticate with the NatureCube API using `NatureCubeR`.
 
 ## Overview
 
-All `okalaR` functions that call the API require an `hdr` object — a list
+All `NatureCubeR` functions that call the API require an `hdr` object — a list
 containing your API key and a configured base URL. The two-step process is:
 
 1. Retrieve your API key with `get_key()`
@@ -24,7 +24,7 @@ containing your API key and a configured base URL. The two-step process is:
 
 ## Prerequisites
 
-Obtain your API key from the Okala dashboard at <https://naturecube.io>.
+Obtain your API key from the NatureCube dashboard at <https://naturecube.io>.
 
 Store your credentials in `~/.Renviron` so they are available to every R
 session without hard-coding them in scripts:
@@ -65,7 +65,7 @@ api_key <- get_key(api_key = "your_api_key_here")
 ## Step 2 — Build auth headers
 
 `auth_headers()` combines your key with the base URL and returns the `hdr`
-list expected by all other `okalaR` functions.
+list expected by all other `NatureCubeR` functions.
 
 ```{r auth-headers, eval=FALSE}
 hdr <- auth_headers(api_key)

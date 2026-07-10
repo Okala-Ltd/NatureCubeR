@@ -7,7 +7,7 @@
 auth_headers_dev(
   api_key = get_key(),
   NATURECUBE_URL = Sys.getenv("NATURECUBE_SIT_URL", unset =
-    "https://sit.api.naturecube.io/api/")
+    "https://sit.naturecube.io/api/")
 )
 }
 \arguments{
@@ -21,7 +21,7 @@ via \code{get_key()}.}
 A list containing the root URL and the API key
 }
 \description{
-Creates a base URL object for the development Okala API.
+Creates a base URL object for the development NatureCube API.
 Requires a project API key.
 }
 \examples{

@@ -40,7 +40,7 @@ get_key <- function(api_key = NULL) {
 #' @description
 #' Creates a base URL object that can be used as a root to call endpoints.
 #' This requires a project API key, which can be obtained directly from the
-#' Okala dashboard.
+#' NatureCube dashboard.
 #'
 #' @param api_key A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
 #'   via \code{get_key()}.
@@ -72,7 +72,7 @@ auth_headers <- function(api_key = get_key(),
 #' @title Initiate root URL with API key (Development)
 #'
 #' @description
-#' Creates a base URL object for the development Okala API.
+#' Creates a base URL object for the development NatureCube API.
 #' Requires a project API key.
 #'
 #' @param api_key A valid API key. If omitted, reads \code{NATURECUBE_API_KEY}
@@ -94,7 +94,7 @@ auth_headers_dev <- function(
     api_key = get_key(),
     NATURECUBE_URL = Sys.getenv(
       "NATURECUBE_SIT_URL",
-      unset = "https://sit.api.naturecube.io/api/"
+      unset = "https://sit.naturecube.io/api/"
     )) {
   NATURECUBE_URL <- gsub("^['\"]|['\"]$", "", NATURECUBE_URL)
   root <- httr2::request(NATURECUBE_URL)
@@ -102,3 +102,4 @@ auth_headers_dev <- function(
             root = root)
   return(d)
 }
+

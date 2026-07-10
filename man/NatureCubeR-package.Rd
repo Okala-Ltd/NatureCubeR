@@ -4,9 +4,9 @@
 \name{NatureCubeR-package}
 \alias{NatureCubeR}
 \alias{NatureCubeR-package}
-\title{NatureCubeR: API wrapper around the okala dashboard interface}
+\title{NatureCubeR: API wrapper around the NatureCube dashboard interface}
 \description{
-Allows basic reading and writing of data to and from your project on the okala dashboard.
+Allows basic reading and writing of data to and from your project on the NatureCube dashboard.
 }
 \author{
 \strong{Maintainer}: Adam Varley \email{adam@okala.io}

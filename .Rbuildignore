@@ -6,6 +6,5 @@
 ^\.github$
 ^tutorials$
 ^NatureCubePy$
-^OkalaR$
-^okalaR\.Rcheck$
 ^NatureCubeR\.Rcheck$
+^\.claude$
