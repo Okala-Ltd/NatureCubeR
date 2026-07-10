@@ -13,8 +13,8 @@ function \link{auth_headers}}
 \item{datatype}{A character vector of data types
 c("video","audio","image","eDNA")}
 
-\item{psrID}{Unique project system ID for which the media assets
-will be retrieved}
+\item{psrID}{A numeric vector of project system record IDs (as found in
+\code{stations$project_system_record_id}).}
 }
 \value{
 A tibble of media assets for the specified project system record
@@ -25,7 +25,7 @@ For data types c("video","audio","image")
 }
 \examples{
 \dontrun{
-  assets <- get_media_assets(headers, datatype="video", psrID=123)
+  assets <- get_media_assets(headers, datatype = "video", psrID = stations$project_system_record_id)
 }
 
 }

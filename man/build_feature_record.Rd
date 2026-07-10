@@ -55,7 +55,10 @@ associated observations.
     start_time = Sys.time() - 3600,
     end_time = Sys.time(),
     created_by_method = "drawn",
-    geometry = list(type = "Polygon", coordinates = list(list(c(0,0), c(1,0), c(1,1), c(0,1), c(0,0)))),
+    geometry = list(
+      type = "Polygon",
+      coordinates = list(list(c(0,0), c(1,0), c(1,1), c(0,1), c(0,0)))
+    ),
     observations = list(obs1)
   )
 }

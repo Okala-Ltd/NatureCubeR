@@ -12,7 +12,7 @@ library(jsonlite)
 
 # Project Data Tutorial
 
-This document describes the core project-data workflow in `okalaR`:
+This document describes the core project-data workflow in `NatureCubeR`:
 authenticating, browsing your project's sensors and media, and managing
 species labels.
 
@@ -43,7 +43,7 @@ See [auth_tutorial.md](auth_tutorial.md) for full authentication details.
 ## Step 1 — Authenticate
 
 ```r
-library(okalaR)
+library(NatureCubeR)
 
 api_key <- get_key()
 hdr <- auth_headers(api_key)

@@ -37,7 +37,7 @@ A named list with device settings ready for API submission.
 }
 \description{
 Constructs a validated device settings list matching the DeviceSettings schema
-required by the Okala API.
+required by the NatureCube API.
 }
 \examples{
 \dontrun{

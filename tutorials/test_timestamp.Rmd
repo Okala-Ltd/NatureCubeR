@@ -17,7 +17,7 @@ This tutorial demonstrates how to update media file timestamps using the `Nature
 
 ## Authentication
 
-Your API key is found in your project settings on the Okala dashboard: [https://naturecube.io/api/](https://naturecube.io/api/)
+Your API key is found in your project settings on the NatureCube dashboard: [https://naturecube.io/api/](https://naturecube.io/api/)
 
 ```{r auth, eval=FALSE}
 api_key <- get_key()

@@ -1,10 +1,10 @@
 # =============================================================================
 # Authentication Tutorial
 # =============================================================================
-# This tutorial covers how to authenticate with the Okala API using okalaR.
+# This tutorial covers how to authenticate with the NatureCube API using NatureCubeR.
 #
 # Before running this script:
-#   1. Obtain your API key from the Okala dashboard: https://naturecube.io
+#   1. Obtain your API key from the NatureCube dashboard: https://naturecube.io
 #   2. Add your credentials to your ~/.Renviron file (recommended):
 #
 #        NATURECUBE_API_KEY=your_api_key_here
@@ -14,7 +14,7 @@
 #      You can open ~/.Renviron quickly with: usethis::edit_r_environ()
 # =============================================================================
 
-library(okalaR)
+library(NatureCubeR)
 
 # -----------------------------------------------------------------------------
 # Step 1: Retrieve your API key
@@ -34,7 +34,7 @@ cat("API key retrieved successfully.\n")
 # Step 2: Create auth headers (production)
 # -----------------------------------------------------------------------------
 # auth_headers() combines your API key with the base URL and returns a list
-# that is passed to all other okalaR functions as `hdr`.
+# that is passed to all other NatureCubeR functions as `hdr`.
 #
 # The base URL defaults to the NATURECUBE_URL environment variable, falling
 # back to "https://naturecube.io/api/" if the variable is not set.

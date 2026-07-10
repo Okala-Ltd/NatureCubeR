@@ -114,31 +114,53 @@ plot_stations <- function(geojson_response) {
 #'   function \link{auth_headers}
 #' @param datatype A character vector of data types
 #'   c("video","audio","image","eDNA")
-#' @param psrID Unique project system ID for which the media assets
-#'   will be retrieved
+#' @param psrID A numeric vector of project system record IDs (as found in
+#'   \code{stations$project_system_record_id}).
 #'
 #' @return A tibble of media assets for the specified project system record
 #'
 #' @examples
 #' \dontrun{
-#'   assets <- get_media_assets(headers, datatype="video", psrID=123)
+#'   assets <- get_media_assets(headers, datatype = "video", psrID = stations$project_system_record_id)
 #' }
 #'
 #' @author
 #' Adam Varley
 #' @export
-get_media_assets <- function(hdr,
-                             datatype = c("video", "audio", "image", "eDNA"),
-                             psrID) {
+get_media_assets <- function(hdr, 
+                              datatype = c("video", "audio", "image", "eDNA"), 
+                              psrID) {
+  
+  all_results <- list()
+  offset      <- 0
+  limit = API_MAX_LIMIT
 
-  urlreq_ap <- httr2::req_url_path_append(
-    hdr$root, "getMediaAssets", datatype, hdr$key) %>%
-    httr2::req_method("POST") %>%
-    httr2::req_body_json(data = psrID)
+  pb <- cli::cli_progress_bar(
+    format      = "Fetching media assets | {cli::pb_current} records | elapsed: {cli::pb_elapsed}",
+    total       = NA,
+    clear       = FALSE
+  )
 
-  preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
-  resp <- httr2::resp_body_string(preq)
+  repeat {
+    urlreq_ap <- httr2::req_url_path_append(hdr$root, "getMediaAssets", datatype, hdr$key) %>% 
+      httr2::req_method("POST") %>% 
+      httr2::req_url_query(offset = offset, limit = limit) %>% 
+      httr2::req_body_json(data = as.list(psrID))
 
-  return(jsonlite::fromJSON(resp) %>% tibble::as_tibble())
+    resp <- httr2::req_perform(urlreq_ap) %>% 
+      httr2::resp_body_string() %>% 
+      jsonlite::fromJSON()
+    
+    batch <- tibble::as_tibble(resp)
+    all_results[[length(all_results) + 1]] <- batch
+    offset <- offset + nrow(batch)
+
+    cli::cli_progress_update(id = pb, inc = nrow(batch))
+    Sys.sleep(0.5)
+
+    if (nrow(batch) < limit) break
+  }
+  cli::cli_progress_done(id = pb)
+  dplyr::bind_rows(all_results)
 
 }

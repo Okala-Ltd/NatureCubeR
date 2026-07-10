@@ -21,7 +21,7 @@ via \code{get_key()}.}
 A list containing the root URL and the API key
 }
 \description{
-Creates a base URL object for the development Okala API.
+Creates a base URL object for the development NatureCube API.
 Requires a project API key.
 }
 \examples{
