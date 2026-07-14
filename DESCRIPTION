@@ -1,7 +1,7 @@
 Package: NatureCubeR
 Type: Package
 Title: API wrapper around the NatureCube dashboard interface
-Version: 1.1.9
+Version: 1.1.10
 Authors@R: 
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
 Description: Allows basic reading and writing of data to and from your 
@@ -15,6 +15,7 @@ Imports:
     geojsonsf,
     tibble,
     dplyr,
+    lubridate,
     sf,
     scales,
     magrittr,
