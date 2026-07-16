@@ -390,9 +390,9 @@ correct_timestamps <- function(file_path, device_id, timestamp, installation_tim
     (data$timestamp - lubridate::hours(48) > data$removal_timestamp)
 
   # --- Sequential correction: sort by device/file, then chain per device ---
-  data |>
-    dplyr::arrange(device_id, file_path) |>
-    dplyr::group_by(device_id) |>
-    dplyr::group_modify(~ .correct_device_timestamps(.x)) |>
+  data  %>% 
+    dplyr::arrange(device_id, file_path)  %>% 
+    dplyr::group_by(device_id)  %>% 
+    dplyr::group_modify(~ .correct_device_timestamps(.x))  %>% 
     dplyr::ungroup()
 }
