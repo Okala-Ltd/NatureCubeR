@@ -14,7 +14,8 @@ function \link{auth_headers}}
 c("video","audio","image","eDNA")}
 
 \item{psrID}{A numeric vector of project system record IDs (as found in
-\code{stations$project_system_record_id}).}
+\code{stations$project_system_record_id}). Safe to pass every station in
+a project - they are fetched one at a time internally.}
 }
 \value{
 A tibble of media assets for the specified project system record
@@ -22,6 +23,16 @@ A tibble of media assets for the specified project system record
 \description{
 Get all of the station data associated with your project.
 For data types c("video","audio","image")
+
+Internally, each project system record ID is queried separately (its own
+paginated request), even if \code{psrID} holds many IDs. Batching many IDs
+into a single request was found to make the server's response time scale
+with the number of IDs in the batch (roughly +1.5s per extra station in
+testing) - large batches (e.g. an entire project's stations at once) can
+get slow enough deep into pagination to trip a server-side timeout,
+returned as an HTTP 500. Querying one station at a time keeps each request
+fast and avoids that failure mode, so callers do not need to chunk
+\code{psrID} themselves.
 }
 \examples{
 \dontrun{
