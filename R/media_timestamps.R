@@ -292,11 +292,16 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 #'   to sort files in chronological order within each device.
 #' @param device_id Character vector. Unique camera identifier for each file.
 #' @param timestamp POSIXct vector. Timestamps read from the files' EXIF
-#'   metadata.
-#' @param installation_timestamp POSIXct or Date vector. The date/time the
-#'   camera was deployed in the field. Typically one repeated value per device.
-#' @param removal_timestamp POSIXct or Date vector. The date/time the camera
-#'   was removed from the field. Typically one repeated value per device.
+#'   metadata. Non-POSIXct input is coerced via \link[lubridate]{as_datetime}.
+#' @param installation_timestamp Date, POSIXct, or character vector giving the
+#'   date/time the camera was deployed in the field (typically one repeated
+#'   value per device). Always parsed via
+#'   \code{lubridate::ymd_hms(truncated = 3)}, so a date with no time
+#'   component (e.g. \code{"2024-01-15"} or a bare \code{Date}) defaults to
+#'   midnight.
+#' @param removal_timestamp Date, POSIXct, or character vector giving the
+#'   date/time the camera was removed from the field. Parsed the same way as
+#'   \code{installation_timestamp}.
 #'
 #' @return A tibble with the input columns (\code{file_path}, \code{device_id},
 #'   \code{timestamp}, \code{installation_timestamp}, \code{removal_timestamp})
@@ -357,15 +362,32 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 #' @export
 correct_timestamps <- function(file_path, device_id, timestamp, installation_timestamp, removal_timestamp) {
 
-  # --- Input validation: coerce anything that isn't already a date/time type ---
-  as_datetime_checked <- function(x, name, classes = c("POSIXct", "POSIXt", "Date")) {
-    if (inherits(x, classes)) return(x)
-    warning(name, " is not POSIXct or Date; coercing via lubridate::as_datetime().")
-    lubridate::as_datetime(x)
+  # --- Input validation: all arguments must be supplied ---
+  if (missing(file_path))              stop("Missing required argument: file_path")
+  if (missing(device_id))              stop("Missing required argument: device_id")
+  if (missing(timestamp))              stop("Missing required argument: timestamp")
+  if (missing(installation_timestamp)) stop("Missing required argument: installation_timestamp")
+  if (missing(removal_timestamp))      stop("Missing required argument: removal_timestamp")
+
+  # --- timestamp: keep as-is if already POSIXct, otherwise coerce ---
+  if (!inherits(timestamp, c("POSIXct", "POSIXt"))) {
+    timestamp <- lubridate::as_datetime(timestamp)
   }
-  timestamp              <- as_datetime_checked(timestamp, "timestamp", c("POSIXct", "POSIXt"))
-  installation_timestamp <- as_datetime_checked(installation_timestamp, "installation_timestamp")
-  removal_timestamp      <- as_datetime_checked(removal_timestamp, "removal_timestamp")
+
+  # --- Deployment dates: force to full POSIXct via ymd_hms. `truncated = 3`
+  # accepts Date/POSIXct/character input missing time components and
+  # defaults them to midnight, instead of erroring or returning NA. ---
+  force_ymd_hms <- function(x, name) {
+    tz <- if (inherits(x, "POSIXct")) attr(x, "tzone") else NULL
+    if (is.null(tz) || !nzchar(tz)) tz <- "UTC"
+    out <- lubridate::ymd_hms(x, truncated = 3, tz = tz)
+    if (any(is.na(out) & !is.na(x))) {
+      stop(name, " could not be parsed as a date/time (expected Date, POSIXct, or a ymd/ymd_hms-style string).")
+    }
+    out
+  }
+  installation_timestamp <- force_ymd_hms(installation_timestamp, "installation_timestamp")
+  removal_timestamp      <- force_ymd_hms(removal_timestamp, "removal_timestamp")
 
   # Assemble individual vectors into a single data frame for grouped processing
   data <- tibble::tibble(
@@ -390,9 +412,9 @@ correct_timestamps <- function(file_path, device_id, timestamp, installation_tim
     (data$timestamp - lubridate::hours(48) > data$removal_timestamp)
 
   # --- Sequential correction: sort by device/file, then chain per device ---
-  data |>
-    dplyr::arrange(device_id, file_path) |>
-    dplyr::group_by(device_id) |>
-    dplyr::group_modify(~ .correct_device_timestamps(.x)) |>
+  data  %>% 
+    dplyr::arrange(device_id, file_path)  %>% 
+    dplyr::group_by(device_id)  %>% 
+    dplyr::group_modify(~ .correct_device_timestamps(.x))  %>% 
     dplyr::ungroup()
 }
