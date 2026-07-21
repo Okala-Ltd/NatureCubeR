@@ -29,11 +29,9 @@ No explicit return value. Progress messages are displayed for each
   chunk submitted.
 }
 \description{
-Updates timestamps for multiple media file records by automatically splitting
-the data into manageable chunks. This function is recommended for large
-datasets (>1000 records) as it prevents timeout issues and provides progress
-tracking. For smaller datasets, consider using \link{update_media_timestamps}
-for direct submission without chunking.
+Updates timestamps for many media records by splitting them into chunks,
+avoiding timeouts on large datasets. For small datasets, use
+\link{update_media_timestamps} directly.
 }
 \examples{
 \dontrun{
