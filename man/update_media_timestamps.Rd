@@ -24,10 +24,8 @@ Additional columns will be ignored.}
 A list containing the API response with update status
 }
 \description{
-Updates timestamps for one or more media file records in a single API call.
-This function provides direct access to the updateTimestamps endpoint without
-automatic chunking. For large datasets (>1000 records), consider using
-\link{push_new_timestamps} which handles chunking automatically.
+Updates timestamps for one or more media records in a single API call.
+For large datasets (>1000 records), use \link{push_new_timestamps} instead.
 }
 \examples{
 \dontrun{

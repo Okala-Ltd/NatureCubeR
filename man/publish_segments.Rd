@@ -4,7 +4,7 @@
 \alias{publish_segments}
 \title{Set publish status for segment records}
 \usage{
-publish_segments(hdr, publish_status, segment_record_ids)
+publish_segments(hdr, publish_status, segment_record_ids, chunksize = 500)
 }
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}.}
@@ -12,9 +12,12 @@ publish_segments(hdr, publish_status, segment_record_ids)
 \item{publish_status}{A boolean value indicating whether to publish (TRUE) or unpublish (FALSE).}
 
 \item{segment_record_ids}{A numeric vector of segment record IDs to update.}
+
+\item{chunksize}{An integer specifying how many segment record IDs to send per request.
+Defaults to 500.}
 }
 \value{
-A list containing the API response message.
+A list containing the API response message from the last chunk submitted.
 }
 \description{
 Marks or unmarks segment records as published for a given list of segment record IDs.
