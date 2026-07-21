@@ -110,12 +110,23 @@ plot_stations <- function(geojson_response) {
 #' Get all of the station data associated with your project.
 #' For data types c("video","audio","image")
 #'
+#' Internally, each project system record ID is queried separately (its own
+#' paginated request), even if \code{psrID} holds many IDs. Batching many IDs
+#' into a single request was found to make the server's response time scale
+#' with the number of IDs in the batch (roughly +1.5s per extra station in
+#' testing) - large batches (e.g. an entire project's stations at once) can
+#' get slow enough deep into pagination to trip a server-side timeout,
+#' returned as an HTTP 500. Querying one station at a time keeps each request
+#' fast and avoids that failure mode, so callers do not need to chunk
+#' \code{psrID} themselves.
+#'
 #' @param hdr A base URL provided and valid API key returned by the
 #'   function \link{auth_headers}
 #' @param datatype A character vector of data types
 #'   c("video","audio","image","eDNA")
 #' @param psrID A numeric vector of project system record IDs (as found in
-#'   \code{stations$project_system_record_id}).
+#'   \code{stations$project_system_record_id}). Safe to pass every station in
+#'   a project - they are fetched one at a time internally.
 #'
 #' @return A tibble of media assets for the specified project system record
 #'
@@ -127,38 +138,46 @@ plot_stations <- function(geojson_response) {
 #' @author
 #' Adam Varley
 #' @export
-get_media_assets <- function(hdr, 
-                              datatype = c("video", "audio", "image", "eDNA"), 
+get_media_assets <- function(hdr,
+                              datatype = c("video", "audio", "image", "eDNA"),
                               psrID) {
-  
-  all_results <- list()
-  offset      <- 0
-  limit = API_MAX_LIMIT
+
+  psrID  <- unique(psrID)
+  limit  <- API_MAX_LIMIT
 
   pb <- cli::cli_progress_bar(
-    format      = "Fetching media assets | {cli::pb_current} records | elapsed: {cli::pb_elapsed}",
-    total       = NA,
-    clear       = FALSE
+    format = "Fetching media assets {cli::pb_total} stations | {cli::pb_bar} {cli::pb_percent} | eta: {cli::pb_eta}",
+    total  = length(psrID),
+    clear  = FALSE
   )
 
-  repeat {
-    urlreq_ap <- httr2::req_url_path_append(hdr$root, "getMediaAssets", datatype, hdr$key) %>% 
-      httr2::req_method("POST") %>% 
-      httr2::req_url_query(offset = offset, limit = limit) %>% 
-      httr2::req_body_json(data = as.list(psrID))
+  all_results <- list()
 
-    resp <- httr2::req_perform(urlreq_ap) %>% 
-      httr2::resp_body_string() %>% 
-      jsonlite::fromJSON()
-    
-    batch <- tibble::as_tibble(resp)
-    all_results[[length(all_results) + 1]] <- batch
-    offset <- offset + nrow(batch)
+  for (id in psrID) {
+    offset <- 0
+    repeat {
+      urlreq_ap <- httr2::req_url_path_append(hdr$root, "getMediaAssets", datatype, hdr$key) %>%
+        httr2::req_method("POST") %>%
+        httr2::req_url_query(offset = offset, limit = limit) %>%
+        httr2::req_body_json(data = list(id)) %>%
+        httr2::req_retry(
+          max_tries = 5,
+          is_transient = \(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
+        )
 
-    cli::cli_progress_update(id = pb, inc = nrow(batch))
-    Sys.sleep(0.5)
+      resp <- httr2::req_perform(urlreq_ap) %>%
+        httr2::resp_body_string() %>%
+        jsonlite::fromJSON()
 
-    if (nrow(batch) < limit) break
+      batch <- tibble::as_tibble(resp)
+      all_results[[length(all_results) + 1]] <- batch
+      offset <- offset + nrow(batch)
+
+      Sys.sleep(0.5)
+
+      if (nrow(batch) < limit) break
+    }
+    cli::cli_progress_update(id = pb, inc = 1)
   }
   cli::cli_progress_done(id = pb)
   dplyr::bind_rows(all_results)

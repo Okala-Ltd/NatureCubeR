@@ -14,10 +14,8 @@ send_media_chunks <- function(hdr, datachunk) {
 #' @title Update timestamps for multiple media records
 #'
 #' @description
-#' Updates timestamps for one or more media file records in a single API call.
-#' This function provides direct access to the updateTimestamps endpoint without
-#' automatic chunking. For large datasets (>1000 records), consider using
-#' \link{push_new_timestamps} which handles chunking automatically.
+#' Updates timestamps for one or more media records in a single API call.
+#' For large datasets (>1000 records), use \link{push_new_timestamps} instead.
 #'
 #' @param hdr A base URL provided and valid API key returned by the
 #'   function \link{auth_headers}
@@ -134,11 +132,9 @@ update_media_timestamps <- function(hdr, media_records) {
 #' @title Push new timestamps to the platform in chunks
 #'
 #' @description
-#' Updates timestamps for multiple media file records by automatically splitting
-#' the data into manageable chunks. This function is recommended for large
-#' datasets (>1000 records) as it prevents timeout issues and provides progress
-#' tracking. For smaller datasets, consider using \link{update_media_timestamps}
-#' for direct submission without chunking.
+#' Updates timestamps for many media records by splitting them into chunks,
+#' avoiding timeouts on large datasets. For small datasets, use
+#' \link{update_media_timestamps} directly.
 #'
 #' @param hdr A base URL provided and valid API key returned by the
 #'   function \link{auth_headers}
@@ -204,4 +200,199 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
     send_media_chunks(hdr, spl.dt[[i]])
     message('submitted ', i * chunksize, ' timestamps of ', nrow(media_metadata))
   }
+}
+
+
+#' @title Sequentially correct timestamps for a single device
+#'
+#' @description
+#' Internal helper called by \link{correct_timestamps}. Chains corrected
+#' timestamps row-by-row for one device (pre-sorted by \code{file_path}, with
+#' \code{is_outlier} already computed): good files keep their timestamp, a bad
+#' first file is anchored to \code{installation_timestamp}, and each
+#' subsequent bad run is anchored to the last good time (+1 minute) then
+#' offset by the original inter-file gaps.
+#'
+#' @param media_metadata A data frame for a single device, sorted by
+#'   \code{file_path}, containing at minimum the columns \code{timestamp}
+#'   (POSIXct), \code{installation_timestamp} (POSIXct or Date), and
+#'   \code{is_outlier} (logical).
+#'
+#' @return The input data frame with two additional columns:
+#'   \itemize{
+#'     \item \strong{corrected_timestamp}: POSIXct. The corrected timestamp.
+#'     \item \strong{correction_type}: Character. One of \code{"none"},
+#'       \code{"initial_run"}, \code{"mid_deployment_first"}, or
+#'       \code{"mid_deployment_chain"}.
+#'   }
+#'
+#' @seealso \link{correct_timestamps}
+#'
+#' @author
+#' Cristobal Salame
+#' @keywords internal
+.correct_device_timestamps <- function(media_metadata) {
+  n          <- nrow(media_metadata)
+  ts         <- media_metadata$timestamp
+  is_outlier <- media_metadata$is_outlier
+
+  tz_orig <- attr(ts, "tzone")
+  if (is.null(tz_orig) || nchar(tz_orig) == 0) tz_orig <- "UTC"
+
+  corrected       <- lubridate::as_datetime(rep(NA_real_, n), tz = tz_orig)
+  correction_type <- character(n)
+  install_ts      <- lubridate::as_datetime(media_metadata$installation_timestamp[1])
+  gap_secs        <- c(NA_real_, as.numeric(diff(ts), units = "secs"))
+
+  for (i in seq_len(n)) {
+    if (!is_outlier[i]) {
+      # Good timestamp: preserve as-is
+      corrected[i]       <- ts[i]
+      correction_type[i] <- "none"
+    } else if (i == 1) {
+      # is_outlier[i] is TRUE here (the preceding `if` already handled the
+      # FALSE case), so this only fires when the first file on the device
+      # is genuinely bad: anchor to installation timestamp
+      corrected[i]       <- install_ts
+      correction_type[i] <- "initial_run"
+    } else if (!is_outlier[i - 1]) {
+      # First bad file after a run of good files (mid-deployment reset):
+      # use the last good corrected timestamp + 1 minute
+      corrected[i]       <- corrected[i - 1] + 60
+      correction_type[i] <- "mid_deployment_first"
+    } else {
+      # Continuation of a bad run: preserve the original inter-file gap
+      corrected[i]       <- corrected[i - 1] + gap_secs[i]
+      correction_type[i] <- "mid_deployment_chain"
+    }
+  }
+
+  media_metadata$corrected_timestamp <- corrected
+  media_metadata$correction_type     <- correction_type
+  media_metadata
+}
+
+
+#' @title Correct camera trap timestamps
+#'
+#' @description
+#' Identifies and corrects media timestamps corrupted by a camera clock reset
+#' (e.g. the clock reverts to a fixed "bad year" after a battery failure).
+#' Handles both a reset at the start of a deployment (first file anchored to
+#' \code{installation_timestamp}) and a reset partway through (anchored to the
+#' last known-good timestamp), preserving the camera's original inter-file
+#' gaps in both cases.
+#'
+#' Outlier detection uses a 48-hour buffer on both deployment bounds: a file
+#' is flagged if its \code{timestamp} falls more than 48 hours before
+#' \code{installation_timestamp} or more than 48 hours after
+#' \code{removal_timestamp}.
+#'
+#' @param file_path Character vector. Full file paths of the media files, used
+#'   to sort files in chronological order within each device.
+#' @param device_id Character vector. Unique camera identifier for each file.
+#' @param timestamp POSIXct vector. Timestamps read from the files' EXIF
+#'   metadata.
+#' @param installation_timestamp POSIXct or Date vector. The date/time the
+#'   camera was deployed in the field. Typically one repeated value per device.
+#' @param removal_timestamp POSIXct or Date vector. The date/time the camera
+#'   was removed from the field. Typically one repeated value per device.
+#'
+#' @return A tibble with the input columns (\code{file_path}, \code{device_id},
+#'   \code{timestamp}, \code{installation_timestamp}, \code{removal_timestamp})
+#'   and three additional columns produced by the function:
+#'   \itemize{
+#'     \item \strong{is_outlier}: Logical. \code{TRUE} for files whose
+#'           timestamp was identified as incorrect.
+#'     \item \strong{corrected_timestamp}: POSIXct. The corrected timestamp.
+#'           Equals \code{timestamp} for non-outlier files.
+#'     \item \strong{correction_type}: Character. One of:
+#'       \describe{
+#'         \item{\code{"none"}}{Timestamp was valid; no correction applied.}
+#'         \item{\code{"initial_run"}}{First file on device was bad; anchored
+#'           to \code{installation_timestamp}.}
+#'         \item{\code{"mid_deployment_first"}}{First bad file after a run of
+#'           good files; anchored to last good timestamp + 1 minute.}
+#'         \item{\code{"mid_deployment_chain"}}{Subsequent bad file in a run;
+#'           offset from the previous corrected timestamp by the original
+#'           inter-file time gap.}
+#'       }
+#'   }
+#'
+#' @examples
+#' \dontrun{
+#'   library(dplyr)
+#'   library(readr)
+#'
+#'   cam_data <- read_csv("cam_timestamp.csv") %>%
+#'     left_join(deployments, by = "device_id")
+#'
+#'   corrected <- correct_timestamps(
+#'     file_path              = cam_data$file_path,
+#'     device_id              = cam_data$device_id,
+#'     timestamp              = cam_data$timestamp,
+#'     installation_timestamp = cam_data$installation_timestamp,
+#'     removal_timestamp      = cam_data$removal_timestamp
+#'   )
+#'
+#'   # Inspect corrections
+#'   corrected %>%
+#'     filter(is_outlier) %>%
+#'     select(device_id, file_path, corrected_timestamp, correction_type)
+#'
+#'   # Prepare for platform upload
+#'   to_upload <- corrected %>%
+#'     filter(is_outlier) %>%
+#'     mutate(new_timestamp = format(corrected_timestamp, "%Y-%m-%dT%H:%M:%S")) %>%
+#'     select(media_file_record_id, new_timestamp)
+#'
+#'   push_new_timestamps(headers, to_upload, chunksize = 100)
+#' }
+#'
+#' @seealso
+#' \link{push_new_timestamps} to upload corrected timestamps to the platform
+#'
+#' @author
+#' Cristobal Salame
+#' @export
+correct_timestamps <- function(file_path, device_id, timestamp, installation_timestamp, removal_timestamp) {
+
+  # --- Input validation: coerce anything that isn't already a date/time type ---
+  as_datetime_checked <- function(x, name, classes = c("POSIXct", "POSIXt", "Date")) {
+    if (inherits(x, classes)) return(x)
+    warning(name, " is not POSIXct or Date; coercing via lubridate::as_datetime().")
+    lubridate::as_datetime(x)
+  }
+  timestamp              <- as_datetime_checked(timestamp, "timestamp", c("POSIXct", "POSIXt"))
+  installation_timestamp <- as_datetime_checked(installation_timestamp, "installation_timestamp")
+  removal_timestamp      <- as_datetime_checked(removal_timestamp, "removal_timestamp")
+
+  # Assemble individual vectors into a single data frame for grouped processing
+  data <- tibble::tibble(
+    file_path              = file_path,
+    device_id              = device_id,
+    timestamp              = timestamp,
+    installation_timestamp = installation_timestamp,
+    removal_timestamp      = removal_timestamp
+  )
+
+  # --- Check for missing values ---
+  cols_with_na <- names(data)[sapply(data, anyNA)]
+  if (length(cols_with_na) > 0) {
+    stop(
+      "The following column(s) contain missing values, please check the data: ",
+      paste(cols_with_na, collapse = ", ")
+    )
+  }
+
+  # --- Outlier detection: 48-hour buffer around deployment bounds ---
+  data$is_outlier <- (data$timestamp + lubridate::hours(48) < data$installation_timestamp) |
+    (data$timestamp - lubridate::hours(48) > data$removal_timestamp)
+
+  # --- Sequential correction: sort by device/file, then chain per device ---
+  data |>
+    dplyr::arrange(device_id, file_path) |>
+    dplyr::group_by(device_id) |>
+    dplyr::group_modify(~ .correct_device_timestamps(.x)) |>
+    dplyr::ungroup()
 }
