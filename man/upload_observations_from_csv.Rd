@@ -37,7 +37,8 @@ precedence over \code{schema} when provided.}
 uploading. Default \code{FALSE}.}
 
 \item{...}{Additional arguments passed to
-\code{build_upload_observations_from_table()}.}
+\code{build_upload_observations_from_table()}, e.g. \code{format},
+\code{lon_col}, \code{recorded_at_format}.}
 }
 \value{
 A list with built observations summary and API response when uploaded.
@@ -47,6 +48,11 @@ One-call workflow to read a CSV file, build observations, and upload to
 \code{uploadObservations}. Pass a \code{procedure} list from
 \code{get_procedure()} (preferred) or a raw \code{schema} with
 \code{system_name}/\code{procedure_name}.
+
+Both long and wide CSV layouts are supported and auto-detected; see
+\code{build_upload_observations_from_table()} for details. Pass
+\code{format = "long"} or \code{format = "wide"} (via \code{...}) to
+override detection.
 }
 \examples{
 \dontrun{

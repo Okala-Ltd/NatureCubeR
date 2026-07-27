@@ -12,6 +12,7 @@ build_upload_observations_from_table(
   procedure_index = NULL,
   system_name = NULL,
   procedure_name = NULL,
+  format = "auto",
   lon_col = "longitude",
   lat_col = "latitude",
   recorded_at_col = "recorded_at",
@@ -43,6 +44,10 @@ Optional.}
 
 \item{procedure_name}{Character procedure name used to resolve procedure
 index. Optional.}
+
+\item{format}{One of \code{"auto"} (default), \code{"long"}, or
+\code{"wide"}. When \code{"auto"}, long format is assumed if
+\code{item_name_col} is present in \code{data}, otherwise wide format.}
 
 \item{lon_col}{Character name of longitude column. Default \code{"longitude"}.}
 
@@ -82,6 +87,13 @@ project schema when needed.
 Supply either a \code{procedure} list (returned by \code{get_procedure()})
 or a raw \code{schema} with \code{system_name}/\code{procedure_name}.
 When \code{procedure} is provided it takes precedence.
+
+Two table layouts are supported and auto-detected, mirroring
+\code{validate_csv_against_procedure()}: \strong{long} format (one row per
+observation item, with \code{item_name}/\code{item_uuid} and \code{data}
+columns) and \strong{wide} format (one row per feature, with procedure item
+names spread as column headers). Override detection with
+\code{format = "long"} or \code{format = "wide"}.
 }
 \examples{
 \dontrun{

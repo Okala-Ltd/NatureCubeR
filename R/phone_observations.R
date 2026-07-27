@@ -1489,6 +1489,13 @@ resolve_schema_indices <- function(schema,
 #' or a raw \code{schema} with \code{system_name}/\code{procedure_name}.
 #' When \code{procedure} is provided it takes precedence.
 #'
+#' Two table layouts are supported and auto-detected, mirroring
+#' \code{validate_csv_against_procedure()}: \strong{long} format (one row per
+#' observation item, with \code{item_name}/\code{item_uuid} and \code{data}
+#' columns) and \strong{wide} format (one row per feature, with procedure item
+#' names spread as column headers). Override detection with
+#' \code{format = "long"} or \code{format = "wide"}.
+#'
 #' @param data Data frame of observation rows.
 #' @param procedure Named list returned by \code{get_procedure()}. Takes
 #'   precedence over \code{schema} when provided.
@@ -1501,6 +1508,9 @@ resolve_schema_indices <- function(schema,
 #'   Optional.
 #' @param procedure_name Character procedure name used to resolve procedure
 #'   index. Optional.
+#' @param format One of \code{"auto"} (default), \code{"long"}, or
+#'   \code{"wide"}. When \code{"auto"}, long format is assumed if
+#'   \code{item_name_col} is present in \code{data}, otherwise wide format.
 #' @param lon_col Character name of longitude column. Default \code{"longitude"}.
 #' @param lat_col Character name of latitude column. Default \code{"latitude"}.
 #' @param recorded_at_col Character name of recorded timestamp column.
@@ -1544,6 +1554,7 @@ build_upload_observations_from_table <- function(data,
                                                  procedure_index = NULL,
                                                  system_name = NULL,
                                                  procedure_name = NULL,
+                                                 format = "auto",
                                                  lon_col = "longitude",
                                                  lat_col = "latitude",
                                                  recorded_at_col = "recorded_at",
@@ -1563,6 +1574,13 @@ build_upload_observations_from_table <- function(data,
   missing_cols <- setdiff(required_cols, names(data))
   if (length(missing_cols) > 0) {
     stop("Missing required columns in data: ", paste(missing_cols, collapse = ", "))
+  }
+
+  format <- match.arg(format, c("auto", "long", "wide"))
+  detected_format <- if (format == "auto") {
+    if (item_name_col %in% names(data)) "long" else "wide"
+  } else {
+    format
   }
 
   # Resolve IDs and item dictionary from procedure list or schema
@@ -1592,6 +1610,34 @@ build_upload_observations_from_table <- function(data,
     sys_id   <- as.integer(sys_obj$project_system_id)
     proc_id  <- as.integer(proc_obj$procedure_id)
   }
+
+  if (detected_format == "wide") {
+    return(.build_wide_observations(
+      data = data, dictionary = dictionary, sys_id = sys_id, proc_id = proc_id,
+      lon_col = lon_col, lat_col = lat_col, recorded_at_col = recorded_at_col,
+      recorded_at_format = recorded_at_format, timezone = timezone
+    ))
+  }
+
+  .build_long_observations(
+    data = data, dictionary = dictionary, sys_id = sys_id, proc_id = proc_id,
+    lon_col = lon_col, lat_col = lat_col, recorded_at_col = recorded_at_col,
+    item_uuid_col = item_uuid_col, item_name_col = item_name_col,
+    value_col = value_col, numeric_value_col = numeric_value_col,
+    observation_id_col = observation_id_col,
+    recorded_at_format = recorded_at_format, timezone = timezone
+  )
+}
+
+
+# Internal: build RObservationRecord payloads from a long-format table
+# (one row per observation item).
+.build_long_observations <- function(data, dictionary, sys_id, proc_id,
+                                     lon_col, lat_col, recorded_at_col,
+                                     item_uuid_col, item_name_col,
+                                     value_col, numeric_value_col,
+                                     observation_id_col,
+                                     recorded_at_format, timezone) {
 
   data[[item_uuid_col]] <- as.character(data[[item_uuid_col]] %||% "")
   data[[item_name_col]] <- as.character(data[[item_name_col]] %||% "")
@@ -1683,11 +1729,89 @@ build_upload_observations_from_table <- function(data,
 
   unresolved_rows <- data[unresolved_mask, c(item_name_col, item_uuid_col), drop = FALSE]
 
-  return(list(
+  list(
     observations    = unname(observations),  # must be unnamed so JSON serialises as array not object
     resolved_rows   = nrow(valid_rows),
     unresolved_rows = unresolved_rows
-  ))
+  )
+}
+
+
+# Internal: build RObservationRecord payloads from a wide-format table
+# (one row per feature, procedure item names as column headers).
+.build_wide_observations <- function(data, dictionary, sys_id, proc_id,
+                                     lon_col, lat_col, recorded_at_col,
+                                     recorded_at_format, timezone) {
+
+  meta_cols <- c(lon_col, lat_col, recorded_at_col)
+  item_cols <- setdiff(names(data), meta_cols)
+
+  name_lookup <- stats::setNames(
+    dictionary$item_uuid,
+    normalize_lookup_value(dictionary$item_name)
+  )
+
+  col_uuid        <- unname(name_lookup[normalize_lookup_value(item_cols)])
+  resolved_cols   <- item_cols[!is.na(col_uuid)]
+  resolved_uuids  <- col_uuid[!is.na(col_uuid)]
+  unresolved_cols <- item_cols[is.na(col_uuid)]
+
+  if (length(resolved_cols) == 0) {
+    stop("No columns could be matched to procedure items. Check column names against item_name in the procedure.")
+  }
+
+  timestamp_raw    <- as.character(data[[recorded_at_col]])
+  timestamp_parsed <- as.POSIXct(timestamp_raw, format = recorded_at_format, tz = timezone)
+  iso_timestamp    <- ifelse(
+    !is.na(timestamp_parsed),
+    format(timestamp_parsed, "%Y-%m-%dT%H:%M:%SZ"),
+    timestamp_raw
+  )
+
+  lon_vals <- as.numeric(data[[lon_col]])
+  lat_vals <- as.numeric(data[[lat_col]])
+
+  observations <- vector("list", nrow(data))
+  keep <- logical(nrow(data))
+
+  for (r in seq_len(nrow(data))) {
+    row_values <- list()
+
+    for (i in seq_along(resolved_cols)) {
+      val_chr <- trimws(as.character(data[[resolved_cols[i]]][[r]]))
+      if (!nzchar(val_chr) || identical(val_chr, "NA")) next
+      row_values[[resolved_uuids[i]]] <- val_chr
+    }
+
+    if (length(row_values) == 0) next
+
+    keep[r] <- TRUE
+    observations[[r]] <- list(
+      survey_uuid       = uuid::UUIDgenerate(),
+      project_system_id = sys_id,
+      procedure_id      = proc_id,
+      recorded_at       = iso_timestamp[r],
+      lon               = lon_vals[r],
+      lat               = lat_vals[r],
+      values            = row_values
+    )
+  }
+
+  if (!any(keep)) {
+    stop("No rows could be converted into observations. Check item column mapping and values.")
+  }
+
+  unresolved_rows <- data.frame(
+    item_name = unresolved_cols,
+    item_uuid = rep(NA_character_, length(unresolved_cols)),
+    stringsAsFactors = FALSE
+  )
+
+  list(
+    observations    = unname(observations[keep]),  # must be unnamed so JSON serialises as array not object
+    resolved_rows   = sum(keep),
+    unresolved_rows = unresolved_rows
+  )
 }
 
 
@@ -1698,6 +1822,11 @@ build_upload_observations_from_table <- function(data,
 #' \code{uploadObservations}. Pass a \code{procedure} list from
 #' \code{get_procedure()} (preferred) or a raw \code{schema} with
 #' \code{system_name}/\code{procedure_name}.
+#'
+#' Both long and wide CSV layouts are supported and auto-detected; see
+#' \code{build_upload_observations_from_table()} for details. Pass
+#' \code{format = "long"} or \code{format = "wide"} (via \code{...}) to
+#' override detection.
 #'
 #' @param hdr A base URL and API key returned by \link{auth_headers} or
 #'   \link{auth_headers_dev}.
@@ -1711,7 +1840,8 @@ build_upload_observations_from_table <- function(data,
 #' @param dry_run Logical; if \code{TRUE}, returns built observations without
 #'   uploading. Default \code{FALSE}.
 #' @param ... Additional arguments passed to
-#'   \code{build_upload_observations_from_table()}.
+#'   \code{build_upload_observations_from_table()}, e.g. \code{format},
+#'   \code{lon_col}, \code{recorded_at_format}.
 #'
 #' @return A list with built observations summary and API response when uploaded.
 #'
