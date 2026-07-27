@@ -15,14 +15,12 @@ build_upload_observations_from_table(
   format = "auto",
   lon_col = "longitude",
   lat_col = "latitude",
-  recorded_at_col = "recorded_at",
+  timestamp_col = "timestamp",
   item_uuid_col = "item_uuid",
   item_name_col = "item_name",
   value_col = "data",
   numeric_value_col = "numbers",
-  observation_id_col = "observation_id",
-  recorded_at_format = "\%d/\%m/\%Y \%H:\%M",
-  timezone = "UTC"
+  observation_id_col = "observation_id"
 )
 }
 \arguments{
@@ -53,8 +51,11 @@ index. Optional.}
 
 \item{lat_col}{Character name of latitude column. Default \code{"latitude"}.}
 
-\item{recorded_at_col}{Character name of recorded timestamp column.
-Default \code{"recorded_at"}.}
+\item{timestamp_col}{Character name of the timestamp column. Default
+\code{"timestamp"}. Values must be in the strict ISO-8601 UTC format
+\code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}) -- any
+other format stops the build with an error listing the offending
+value(s).}
 
 \item{item_uuid_col}{Character name of item UUID column.
 Default \code{"item_uuid"}.}
@@ -69,11 +70,6 @@ Default \code{"numbers"}.}
 
 \item{observation_id_col}{Character name of observation ID column.
 Default \code{"observation_id"}.}
-
-\item{recorded_at_format}{Optional timestamp parsing format.
-Default \code{"\%d/\%m/\%Y \%H:\%M"}.}
-
-\item{timezone}{Timezone used when parsing non-ISO timestamps. Default \code{"UTC"}.}
 }
 \value{
 A list with \code{observations}, \code{unresolved_rows}, and
@@ -101,7 +97,7 @@ names spread as column headers). Override detection with
   schema    <- get_project_systems(hdr)
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
-  df <- read.csv("tutorials/example_observation_data.csv",
+  df <- read_csv("tutorials/example_observation_data.csv",
                  stringsAsFactors = FALSE)
   built <- build_upload_observations_from_table(
     data      = df,

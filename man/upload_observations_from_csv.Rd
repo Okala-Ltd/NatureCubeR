@@ -38,7 +38,7 @@ uploading. Default \code{FALSE}.}
 
 \item{...}{Additional arguments passed to
 \code{build_upload_observations_from_table()}, e.g. \code{format},
-\code{lon_col}, \code{recorded_at_format}.}
+\code{lon_col}, \code{timestamp_col}.}
 }
 \value{
 A list with built observations summary and API response when uploaded.
@@ -52,7 +52,8 @@ One-call workflow to read a CSV file, build observations, and upload to
 Both long and wide CSV layouts are supported and auto-detected; see
 \code{build_upload_observations_from_table()} for details. Pass
 \code{format = "long"} or \code{format = "wide"} (via \code{...}) to
-override detection.
+override detection. The CSV's timestamp column (default \code{"timestamp"})
+must use the strict ISO-8601 UTC format \code{yyyy-mm-ddThh:mm:ssZ}.
 }
 \examples{
 \dontrun{
