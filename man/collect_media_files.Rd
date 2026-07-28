@@ -12,11 +12,12 @@ collect_media_files(observations, media_dir)
 \item{media_dir}{Character. Path to the directory containing media files.}
 }
 \value{
-A named list of curl::form_file objects ready for multipart upload,
-  or an empty list if no media files are found.
+A named list keyed by filename. Each element is a list with
+  \code{filepath}, \code{data_type}, and \code{content_type}.
+  Returns an empty list if no media files are found.
 }
 \description{
-Extracts media file paths from observations with media types and prepares them
-for multipart upload.
+Extracts media filenames and local paths from observations with media types,
+for use with the signed-URL upload flow.
 }
 \keyword{internal}

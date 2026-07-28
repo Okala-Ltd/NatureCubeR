@@ -60,6 +60,18 @@ result <- upload_observations_from_csv(
 length(result$observations)
 ```
 
+## Phone Observations With Media
+
+`upload_phone_observations()` supports attaching photos, videos, and audio from
+a local `media_dir`. Media is uploaded the same way as the mobile app:
+
+1. Request signed PUT URLs (`getFieldMediaUploadUrls`)
+2. Upload each file directly to cloud storage
+3. Submit observation metadata only (`pushPhoneObservations`)
+
+Pass filenames in observation `data` that match files in `media_dir`. Callers
+do not need to manage signed URLs themselves.
+
 ## Contributing
 
 We welcome contributions! Please follow these best practices:

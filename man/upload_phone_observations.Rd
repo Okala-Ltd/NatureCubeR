@@ -36,9 +36,10 @@ A list containing:
   }
 }
 \description{
-Uploads phone observation records to the NatureCube platform. This function processes
-one feature at a time, uploading the feature geometry, its child observations,
-and any associated media files (photos, videos, audio) in a single request per feature.
+Uploads phone observation records to the NatureCube platform. This function
+processes one feature at a time. When observations include media
+(photos, videos, audio), files are uploaded via signed URLs to cloud storage
+first, then observation metadata is submitted (matching the mobile app flow).
 
 The function loops through all features in the payload, providing progress messages
 and collecting any errors that occur. Partial failures do not stop the upload process;

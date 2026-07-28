@@ -307,14 +307,15 @@ return(feature_record)
 #' @title Collect Media Files from Observations
 #'
 #' @description
-#' Extracts media file paths from observations with media types and prepares them
-#' for multipart upload.
+#' Extracts media filenames and local paths from observations with media types,
+#' for use with the signed-URL upload flow.
 #'
 #' @param observations List. List of observation records.
 #' @param media_dir Character. Path to the directory containing media files.
 #'
-#' @return A named list of curl::form_file objects ready for multipart upload,
-#'   or an empty list if no media files are found.
+#' @return A named list keyed by filename. Each element is a list with
+#'   \code{filepath}, \code{data_type}, and \code{content_type}.
+#'   Returns an empty list if no media files are found.
 #'
 #' @keywords internal
 collect_media_files <- function(observations, media_dir) {
@@ -333,21 +334,121 @@ for (obs in observations) {
       filepath <- file.path(media_dir, filename)
 
       if (file.exists(filepath)) {
-        # Determine MIME type based on item_type
-        mime_type <- switch(
+        content_type <- switch(
           item_type,
           "phone-photo" = "image/jpeg",
           "phone-video" = "video/mp4",
           "phone-audio" = "audio/mpeg"
         )
 
-        media_files[[filename]] <- curl::form_file(filepath, type = mime_type)
+        media_files[[filename]] <- list(
+          filepath = filepath,
+          data_type = item_type,
+          content_type = content_type
+        )
       }
     }
   }
 }
 
 return(media_files)
+}
+
+
+#' @title Request signed URLs for field media upload
+#'
+#' @description
+#' Calls \code{POST /getFieldMediaUploadUrls/{api_key}/{project_id}} and returns
+#' signed PUT URLs for direct-to-GCS uploads.
+#'
+#' @param hdr Auth headers from \link{auth_headers}.
+#' @param project_id Integer. Project ID.
+#' @param files List of lists, each with \code{filename}, \code{data_type},
+#'   and \code{context} (typically \code{"field_record"}).
+#'
+#' @return A list of file descriptors with \code{filename}, \code{blob_path},
+#'   \code{signed_url}, and \code{content_type}.
+#'
+#' @keywords internal
+get_field_media_upload_urls <- function(hdr, project_id, files) {
+  if (length(files) == 0) {
+    return(list())
+  }
+
+  # Batch in chunks of 50 (API limit)
+  all_results <- list()
+  batch_size <- 50L
+  n <- length(files)
+  for (start in seq(1L, n, by = batch_size)) {
+    end <- min(start + batch_size - 1L, n)
+    batch <- files[start:end]
+
+    urlreq <- httr2::req_url_path_append(
+      hdr$root,
+      "getFieldMediaUploadUrls",
+      hdr$key,
+      as.character(project_id)
+    )
+    urlreq <- urlreq |>
+      httr2::req_method("POST") |>
+      httr2::req_body_json(list(files = unname(batch)))
+
+    response <- httr2::req_perform(urlreq)
+    body <- httr2::resp_body_json(response)
+    all_results <- c(all_results, body$files)
+  }
+
+  return(all_results)
+}
+
+
+#' @title Upload local media files via signed URLs
+#'
+#' @description
+#' Presigns upload URLs then PUTs each local file directly to cloud storage.
+#'
+#' @param hdr Auth headers from \link{auth_headers}.
+#' @param project_id Integer. Project ID.
+#' @param media_files Named list from \link{collect_media_files}.
+#'
+#' @return Invisibly, the list of presign response entries.
+#'
+#' @keywords internal
+upload_field_media_files <- function(hdr, project_id, media_files) {
+  if (length(media_files) == 0) {
+    return(invisible(list()))
+  }
+
+  file_requests <- lapply(names(media_files), function(filename) {
+    list(
+      filename = filename,
+      data_type = media_files[[filename]]$data_type,
+      context = "field_record"
+    )
+  })
+
+  signed <- get_field_media_upload_urls(hdr, project_id, file_requests)
+
+  for (entry in signed) {
+    filename <- entry$filename
+    info <- media_files[[filename]]
+    if (is.null(info)) {
+      stop("Presign returned unexpected filename: ", filename)
+    }
+
+    content_type <- if (!is.null(entry$content_type)) entry$content_type else info$content_type
+    put_req <- httr2::request(entry$signed_url) |>
+      httr2::req_method("PUT") |>
+      httr2::req_headers(`Content-Type` = content_type) |>
+      httr2::req_body_raw(
+        readBin(info$filepath, what = "raw", n = file.info(info$filepath)$size),
+        type = content_type
+      )
+
+    httr2::req_perform(put_req)
+  }
+
+  invisible(signed)
 }
 
 
@@ -1794,9 +1895,10 @@ upload_observations_from_csv <- function(hdr,
 #' @title Upload Phone Observations
 #'
 #' @description
-#' Uploads phone observation records to the NatureCube platform. This function processes
-#' one feature at a time, uploading the feature geometry, its child observations,
-#' and any associated media files (photos, videos, audio) in a single request per feature.
+#' Uploads phone observation records to the NatureCube platform. This function
+#' processes one feature at a time. When observations include media
+#' (photos, videos, audio), files are uploaded via signed URLs to cloud storage
+#' first, then observation metadata is submitted (matching the mobile app flow).
 #'
 #' The function loops through all features in the payload, providing progress messages
 #' and collecting any errors that occur. Partial failures do not stop the upload process;
@@ -1904,42 +2006,26 @@ for (i in seq_along(feature_payload)) {
       device_settings = device_settings
     )
 
-    # Collect media files for this feature's observations
-    media_files <- list()
+    # Upload media via signed URLs before metadata push
     if (!is.null(media_dir) && !is.null(feature$observations)) {
       media_files <- collect_media_files(feature$observations, media_dir)
+      if (length(media_files) > 0) {
+        message("  Uploading ", length(media_files), " media file(s) via signed URLs...")
+        upload_field_media_files(hdr, project_id, media_files)
+      }
     }
 
-    # Build the request URL
+    # Metadata-only push — form field "data" (SchemaChecker)
+    json_payload <- jsonlite::toJSON(device_upload, auto_unbox = TRUE)
     urlreq <- httr2::req_url_path_append(
       hdr$root,
-      "pushObservation",
-      hdr$key
+      "pushPhoneObservations",
+      hdr$key,
+      as.character(project_id)
     )
-
-    # Add project_id as path parameter
-    urlreq <- httr2::req_url_path_append(urlreq, as.character(project_id))
-
-    # Set method
-    urlreq <- urlreq |> httr2::req_method("POST")
-
-    # Build request body based on whether we have media files
-    if (length(media_files) > 0) {
-      # Multipart request with JSON data and files
-      json_payload <- jsonlite::toJSON(device_upload, auto_unbox = TRUE)
-
-      # Combine JSON payload with media files
-      body_parts <- c(
-        list(device_upload = json_payload),
-        media_files
-      )
-
-      urlreq <- urlreq |> httr2::req_body_multipart(!!!body_parts)
-    } else
-    {
-      # Simple JSON request
-      urlreq <- urlreq |> httr2::req_body_json(data = device_upload)
-    }
+    urlreq <- urlreq |>
+      httr2::req_method("POST") |>
+      httr2::req_body_multipart(data = json_payload)
 
     # Perform the request
     response <- httr2::req_perform(urlreq)
