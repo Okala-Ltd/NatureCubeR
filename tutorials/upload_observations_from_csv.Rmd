@@ -20,7 +20,7 @@ This document describes the easiest route to upload observations to the
 - Resolves `item_uuid` from `item_name` when needed
 - Groups rows into observations using:
   - `observation_id` when present
-  - otherwise `(longitude, latitude, recorded_at)`
+  - otherwise `(longitude, latitude, timestamp)`
 - Uploads all built observations
 
 ## Required CSV columns
@@ -29,7 +29,7 @@ Minimum required columns:
 
 - `longitude`
 - `latitude`
-- `recorded_at`
+- `timestamp` (strict ISO-8601 UTC, e.g. `2026-04-15T08:39:00Z`)
 
 Recommended columns:
 
@@ -101,8 +101,7 @@ result <- upload_observations_from_csv(
   hdr                = hdr,
   csv_path           = csv_path,
   procedure          = procedure,
-  dry_run            = TRUE,
-  recorded_at_format = "%d/%m/%Y %H:%M"
+  dry_run            = TRUE
 )
 
 nrow(result$unresolved_rows)
@@ -115,8 +114,7 @@ upload_observations_from_csv(
   hdr                = hdr,
   csv_path           = csv_path,
   procedure          = procedure,
-  dry_run            = FALSE,
-  recorded_at_format = "%d/%m/%Y %H:%M"
+  dry_run            = FALSE
 )
 ```
 

@@ -37,16 +37,28 @@ precedence over \code{schema} when provided.}
 uploading. Default \code{FALSE}.}
 
 \item{...}{Additional arguments passed to
-\code{build_upload_observations_from_table()}.}
+\code{build_upload_observations_from_table()}, e.g. \code{format},
+\code{lon_col}, \code{timestamp_col}.}
 }
 \value{
-A list with built observations summary and API response when uploaded.
+A list with \code{uploaded}, \code{response} (per-observation API
+  results), \code{n_success}, \code{n_failed}, the built \code{observations},
+  \code{resolved_rows}, and \code{unresolved_rows}. The API validates each
+  observation independently in a single request, so one rejected
+  observation does not prevent the others from being saved; a final
+  success/failure summary is printed once the upload completes.
 }
 \description{
 One-call workflow to read a CSV file, build observations, and upload to
 \code{uploadObservations}. Pass a \code{procedure} list from
 \code{get_procedure()} (preferred) or a raw \code{schema} with
 \code{system_name}/\code{procedure_name}.
+
+Both long and wide CSV layouts are supported and auto-detected; see
+\code{build_upload_observations_from_table()} for details. Pass
+\code{format = "long"} or \code{format = "wide"} (via \code{...}) to
+override detection. The CSV's timestamp column (default \code{"timestamp"})
+must use the strict ISO-8601 UTC format \code{yyyy-mm-ddThh:mm:ssZ}.
 }
 \examples{
 \dontrun{

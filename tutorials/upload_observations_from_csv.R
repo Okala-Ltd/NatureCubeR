@@ -75,8 +75,7 @@ dry_run_result <- upload_observations_from_csv(
   hdr       = hdr,
   csv_path  = csv_path,
   procedure = procedure,
-  dry_run   = FALSE,
-  recorded_at_format = "%d/%m/%Y %H:%M"
+  dry_run   = FALSE
 )
 
 

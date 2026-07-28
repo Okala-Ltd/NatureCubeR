@@ -53,8 +53,7 @@ result <- upload_observations_from_csv(
     csv_path = "tutorials/example_observation_data .csv",
     system_name = "Plante Ivindo",
     procedure_name = "Arbre",
-    dry_run = TRUE,
-    recorded_at_format = "%d/%m/%Y %H:%M"
+    dry_run = TRUE
 )
 
 length(result$observations)

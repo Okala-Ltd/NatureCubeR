@@ -13,7 +13,7 @@ validate_csv_against_procedure(
   numeric_value_col = "numbers",
   lon_col = "longitude",
   lat_col = "latitude",
-  recorded_at_col = "recorded_at"
+  timestamp_col = "timestamp"
 )
 }
 \arguments{
@@ -37,7 +37,8 @@ only). Default \code{"numbers"}.}
 
 \item{lat_col}{Latitude column. Default \code{"latitude"}.}
 
-\item{recorded_at_col}{Timestamp column. Default \code{"recorded_at"}.}
+\item{timestamp_col}{Timestamp column. Default \code{"timestamp"}. Values
+must be in the strict format \code{yyyy-mm-ddThh:mm:ssZ}.}
 }
 \value{
 A list (invisibly) with elements:
@@ -63,12 +64,16 @@ same lat/lon will become observations under the same parent feature.
 \strong{Wide format} -- one row per feature. Procedure item names are
 spread as column headers; each row contains all item values for one
 feature. Must still have \code{longitude}, \code{latitude}, and
-\code{recorded_at} columns.
+\code{timestamp} columns.
 
 The format is detected automatically: if the CSV contains a column
 matching \code{item_name_col} it is treated as long format, otherwise
 wide format is assumed. Override with \code{format = "long"} or
 \code{format = "wide"}.
+
+The timestamp column must use the strict ISO-8601 UTC format
+\code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}); values
+in any other format are reported as issues.
 }
 \examples{
 \dontrun{

@@ -12,16 +12,15 @@ build_upload_observations_from_table(
   procedure_index = NULL,
   system_name = NULL,
   procedure_name = NULL,
+  format = "auto",
   lon_col = "longitude",
   lat_col = "latitude",
-  recorded_at_col = "recorded_at",
+  timestamp_col = "timestamp",
   item_uuid_col = "item_uuid",
   item_name_col = "item_name",
   value_col = "data",
   numeric_value_col = "numbers",
-  observation_id_col = "observation_id",
-  recorded_at_format = "\%d/\%m/\%Y \%H:\%M",
-  timezone = "UTC"
+  observation_id_col = "observation_id"
 )
 }
 \arguments{
@@ -44,12 +43,19 @@ Optional.}
 \item{procedure_name}{Character procedure name used to resolve procedure
 index. Optional.}
 
+\item{format}{One of \code{"auto"} (default), \code{"long"}, or
+\code{"wide"}. When \code{"auto"}, long format is assumed if
+\code{item_name_col} is present in \code{data}, otherwise wide format.}
+
 \item{lon_col}{Character name of longitude column. Default \code{"longitude"}.}
 
 \item{lat_col}{Character name of latitude column. Default \code{"latitude"}.}
 
-\item{recorded_at_col}{Character name of recorded timestamp column.
-Default \code{"recorded_at"}.}
+\item{timestamp_col}{Character name of the timestamp column. Default
+\code{"timestamp"}. Values must be in the strict ISO-8601 UTC format
+\code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}) -- any
+other format stops the build with an error listing the offending
+value(s).}
 
 \item{item_uuid_col}{Character name of item UUID column.
 Default \code{"item_uuid"}.}
@@ -64,11 +70,6 @@ Default \code{"numbers"}.}
 
 \item{observation_id_col}{Character name of observation ID column.
 Default \code{"observation_id"}.}
-
-\item{recorded_at_format}{Optional timestamp parsing format.
-Default \code{"\%d/\%m/\%Y \%H:\%M"}.}
-
-\item{timezone}{Timezone used when parsing non-ISO timestamps. Default \code{"UTC"}.}
 }
 \value{
 A list with \code{observations}, \code{unresolved_rows}, and
@@ -82,6 +83,13 @@ project schema when needed.
 Supply either a \code{procedure} list (returned by \code{get_procedure()})
 or a raw \code{schema} with \code{system_name}/\code{procedure_name}.
 When \code{procedure} is provided it takes precedence.
+
+Two table layouts are supported and auto-detected, mirroring
+\code{validate_csv_against_procedure()}: \strong{long} format (one row per
+observation item, with \code{item_name}/\code{item_uuid} and \code{data}
+columns) and \strong{wide} format (one row per feature, with procedure item
+names spread as column headers). Override detection with
+\code{format = "long"} or \code{format = "wide"}.
 }
 \examples{
 \dontrun{
@@ -89,7 +97,7 @@ When \code{procedure} is provided it takes precedence.
   schema    <- get_project_systems(hdr)
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
-  df <- read.csv("tutorials/example_observation_data.csv",
+  df <- read_csv("tutorials/example_observation_data.csv",
                  stringsAsFactors = FALSE)
   built <- build_upload_observations_from_table(
     data      = df,
