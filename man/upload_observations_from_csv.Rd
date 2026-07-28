@@ -41,7 +41,12 @@ uploading. Default \code{FALSE}.}
 \code{lon_col}, \code{timestamp_col}.}
 }
 \value{
-A list with built observations summary and API response when uploaded.
+A list with \code{uploaded}, \code{response} (per-observation API
+  results), \code{n_success}, \code{n_failed}, the built \code{observations},
+  \code{resolved_rows}, and \code{unresolved_rows}. The API validates each
+  observation independently in a single request, so one rejected
+  observation does not prevent the others from being saved; a final
+  success/failure summary is printed once the upload completes.
 }
 \description{
 One-call workflow to read a CSV file, build observations, and upload to
