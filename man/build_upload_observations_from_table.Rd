@@ -52,10 +52,7 @@ index. Optional.}
 \item{lat_col}{Character name of latitude column. Default \code{"latitude"}.}
 
 \item{timestamp_col}{Character name of the timestamp column. Default
-\code{"timestamp"}. Values must be in the strict ISO-8601 UTC format
-\code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}) -- any
-other format stops the build with an error listing the offending
-value(s).}
+\code{"timestamp"}.}
 
 \item{item_uuid_col}{Character name of item UUID column.
 Default \code{"item_uuid"}.}
@@ -72,8 +69,14 @@ Default \code{"numbers"}.}
 Default \code{"observation_id"}.}
 }
 \value{
-A list with \code{observations}, \code{unresolved_rows}, and
-  \code{resolved_rows}.
+A list with \code{observations} (only those that passed every
+  check), \code{source_ids} (the original CSV row number, or grouping key
+  for long format, parallel to \code{observations} - use this to trace an
+  uploaded observation back to its source row), \code{unresolved_rows},
+  \code{resolved_rows}, \code{media_uploads} (local files pending
+  signed-URL upload for surviving observations), and \code{rejected}
+  (observations dropped for any failed check, each with an identifier and
+  the reasons).
 }
 \description{
 Converts a flat data frame into a list of \code{RObservationRecord} payloads
@@ -90,6 +93,23 @@ observation item, with \code{item_name}/\code{item_uuid} and \code{data}
 columns) and \strong{wide} format (one row per feature, with procedure item
 names spread as column headers). Override detection with
 \code{format = "long"} or \code{format = "wide"}.
+
+Every observation is validated as a whole: longitude/latitude must parse
+as decimals, the timestamp must parse (via \code{lubridate::as_datetime()}
+- any format it recognises), every referenced media file must exist on
+disk, and every other value must match its declared data_type. A single
+bad field rejects the whole observation, which is then reported in
+\code{rejected} instead of being built/uploaded. This function is fully
+offline - it does not connect to NatureCube.
+
+If the procedure has a \code{label} data_type item, its value is read
+from fixed taxonomic rank columns - \code{species}, \code{genus},
+\code{family}, \code{order}, \code{class}, \code{phylum}, \code{kingdom} -
+not from a column matching the item's own name. The most specific
+non-blank rank is used (an organism only identified to genus still gets
+uploaded, using that genus). This function does not check that value
+against the label database - only \link{validate_csv_against_procedure}
+does, since that's the only step here that needs a NatureCube connection.
 }
 \examples{
 \dontrun{

@@ -29,13 +29,16 @@ For more detailed examples, see the [`tutorials/`](tutorials/) folder, which con
 
 ## Observation Upload From CSV
 
-The package now includes a low-friction workflow for `uploadObservations`:
+The package includes a low-friction workflow for `uploadObservations`, for a
+wide-format table (one row per feature, procedure item names as column
+headers):
 
 1. Fetches project schema once
-2. Resolves `system_name` and `procedure_name`
-3. Maps `item_name` to `item_uuid` when UUIDs are missing
-4. Builds grouped observations from flat CSV rows
-5. Uploads to the `uploadObservations` endpoint
+2. Validates the table against a procedure - resolving item names to
+   item UUIDs, checking any `label` values against the label database, and
+   rejecting individual rows that fail (bad timestamp, wrong-typed value,
+   missing media file, unmatched label) without stopping the rest
+3. Uploads only the rows that passed validation
 
 ### Recommended tutorial script
 
@@ -47,16 +50,20 @@ The package now includes a low-friction workflow for `uploadObservations`:
 library(NatureCubeR)
 
 hdr <- auth_headers(get_key())
+schema <- get_project_systems(hdr)
+procedure <- get_procedure(schema, system_name = "Plante Ivindo", procedure_name = "Arbre")
 
-result <- upload_observations_from_csv(
-    hdr = hdr,
-    csv_path = "tutorials/example_observation_data .csv",
-    system_name = "Plante Ivindo",
-    procedure_name = "Arbre",
-    dry_run = TRUE
+observation_data <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
+
+validated <- validate_csv_against_procedure(
+    procedure = procedure,
+    observation_data = observation_data,
+    hdr = hdr
 )
 
-length(result$observations)
+result <- upload_observations_from_csv(hdr = hdr, validated = validated)
+
+result$result
 ```
 
 ## Phone Observations With Media

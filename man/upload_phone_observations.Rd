@@ -6,7 +6,6 @@
 \usage{
 upload_phone_observations(
   hdr,
-  project_id,
   feature_payload,
   device_settings,
   media_dir = NULL,
@@ -15,8 +14,6 @@ upload_phone_observations(
 }
 \arguments{
 \item{hdr}{A base URL and API key returned by \link{auth_headers} or \link{auth_headers_dev}.}
-
-\item{project_id}{Integer. The ID of the project to upload observations to.}
 
 \item{feature_payload}{List. A list of feature records created with \code{build_feature_record()}.}
 
@@ -83,7 +80,6 @@ instead, errors are collected and returned in the summary.
   # Upload
   result <- upload_phone_observations(
     hdr = hdr,
-    project_id = 42,
     feature_payload = list(feature1),
     device_settings = device
   )

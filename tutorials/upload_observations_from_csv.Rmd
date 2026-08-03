@@ -17,11 +17,9 @@ This document describes the easiest route to upload observations to the
 
 - Pulls project schema once using your API key
 - Selects a system and procedure
-- Resolves `item_uuid` from `item_name` when needed
-- Groups rows into observations using:
-  - `observation_id` when present
-  - otherwise `(longitude, latitude, timestamp)`
-- Uploads all built observations
+- Validates a wide-format table (one row per feature, procedure item names
+  as column headers) against it, resolving item UUIDs from item names
+- Uploads only the rows that pass validation
 
 ## Required CSV columns
 
@@ -29,15 +27,21 @@ Minimum required columns:
 
 - `longitude`
 - `latitude`
-- `timestamp` (strict ISO-8601 UTC, e.g. `2026-04-15T08:39:00Z`)
+- `timestamp` (any format `lubridate::as_datetime()` can parse, e.g. `2026-04-15T08:39:00Z`)
+- One column per procedure item, named to match that item's name in the
+  schema (e.g. a `DBH` item needs a `DBH` column)
 
-Recommended columns:
+If the procedure has a `label` data_type item, add taxonomic rank columns -
+`species`, `genus`, `family`, `order`, `class`, `phylum`, `kingdom` - looked
+up by those fixed names, not by the item's own name. Not every organism is
+identified all the way to species: the most specific non-blank rank is used
+(e.g. one only identified to genus is still uploaded, using that genus).
+Each unique resulting value is checked once against the wider IUCN species
+database.
 
-- `item_uuid` (optional if `item_name` is present and schema has matching names)
-- `item_name`
-- `data` (text values)
-- `numbers` (numeric fallback)
-- `observation_id` (optional, improves grouping)
+Every observation is validated as a whole: a bad timestamp, non-decimal
+lon/lat, missing media file, unmatched label, or wrong-typed value rejects
+that entire observation rather than uploading it partially.
 
 > **Note:** only simple point observations are currently supported.
 > Nested sub-observations, polygons, and lines are not yet supported.
@@ -79,43 +83,45 @@ procedure <- get_procedure(
 
 ## Step 3 — Validate the CSV
 
-Run this before uploading to catch missing columns or formatting issues early.
+Run this before uploading to catch missing columns, bad values, and
+unrecognised labels early. This is also where every label value gets
+checked against the label database - which can take a while on a large
+CSV, so you only want to do it once.
 
 ```{r validate, eval=FALSE}
-csv_path <- "tutorials/data/example_observation_data.csv"
+csv_path <- "tutorials/data/example_observation_data_wide.csv"
 
-validate_csv_against_procedure(
-  procedure = procedure,
-  csv_path  = csv_path
+# validate_csv_against_procedure() takes a data frame, not a path, so read
+# it yourself first - free to filter/mutate it before validating.
+observation_data <- readr::read_csv(csv_path, show_col_types = FALSE)
+
+validated <- validate_csv_against_procedure(
+  procedure        = procedure,
+  observation_data = observation_data,
+  hdr              = hdr
 )
+
+table(validated$status)
+validated[validated$status == "rejected", c("status", "message")]
 ```
 
 ---
 
-## Step 4 — Dry run then upload
+## Step 4 — Upload the validated result
 
-Always dry-run first. Check that `unresolved_rows` is zero before uploading.
-
-```{r dry-run, eval=FALSE}
-result <- upload_observations_from_csv(
-  hdr                = hdr,
-  csv_path           = csv_path,
-  procedure          = procedure,
-  dry_run            = TRUE
-)
-
-nrow(result$unresolved_rows)
-```
-
-If unresolved rows are zero, set `dry_run = FALSE` to upload:
+Pass `validated` straight into `upload_observations_from_csv()` - it reuses
+everything already built and checked, so nothing is rebuilt and no label is
+checked against the database a second time. This is the only way to
+upload: there's no direct `csv_path`/`procedure` shortcut, since validating
+first is mandatory.
 
 ```{r upload, eval=FALSE}
-upload_observations_from_csv(
-  hdr                = hdr,
-  csv_path           = csv_path,
-  procedure          = procedure,
-  dry_run            = FALSE
+result <- upload_observations_from_csv(
+  hdr       = hdr,
+  validated = validated
 )
+
+result$result
 ```
 
 ---

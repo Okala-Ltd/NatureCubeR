@@ -358,11 +358,10 @@ return(media_files)
 #' @title Request signed URLs for field media upload
 #'
 #' @description
-#' Calls \code{POST /getFieldMediaUploadUrls/{api_key}/{project_id}} and returns
+#' Calls \code{POST /getFieldMediaUploadUrls/{api_key}} and returns
 #' signed PUT URLs for direct-to-GCS uploads.
 #'
 #' @param hdr Auth headers from \link{auth_headers}.
-#' @param project_id Integer. Project ID.
 #' @param files List of lists, each with \code{filename}, \code{data_type},
 #'   and \code{context} (typically \code{"field_record"}).
 #'
@@ -370,7 +369,7 @@ return(media_files)
 #'   \code{signed_url}, and \code{content_type}.
 #'
 #' @keywords internal
-get_field_media_upload_urls <- function(hdr, project_id, files) {
+get_field_media_upload_urls <- function(hdr, files) {
   if (length(files) == 0) {
     return(list())
   }
@@ -386,8 +385,7 @@ get_field_media_upload_urls <- function(hdr, project_id, files) {
     urlreq <- httr2::req_url_path_append(
       hdr$root,
       "getFieldMediaUploadUrls",
-      hdr$key,
-      as.character(project_id)
+      hdr$key
     )
     urlreq <- urlreq |>
       httr2::req_method("POST") |>
@@ -408,13 +406,12 @@ get_field_media_upload_urls <- function(hdr, project_id, files) {
 #' Presigns upload URLs then PUTs each local file directly to cloud storage.
 #'
 #' @param hdr Auth headers from \link{auth_headers}.
-#' @param project_id Integer. Project ID.
 #' @param media_files Named list from \link{collect_media_files}.
 #'
 #' @return Invisibly, the list of presign response entries.
 #'
 #' @keywords internal
-upload_field_media_files <- function(hdr, project_id, media_files) {
+upload_field_media_files <- function(hdr, media_files) {
   if (length(media_files) == 0) {
     return(invisible(list()))
   }
@@ -427,7 +424,17 @@ upload_field_media_files <- function(hdr, project_id, media_files) {
     )
   })
 
-  signed <- get_field_media_upload_urls(hdr, project_id, file_requests)
+  signed <- get_field_media_upload_urls(hdr, file_requests)
+
+  pb <- cli::cli_progress_bar(
+    format = "Uploading {cli::pb_current}/{cli::pb_total} media file(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = length(signed),
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() for the same
+  # pattern and why tryCatch's `error` handler alone isn't enough.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 
   for (entry in signed) {
     filename <- entry$filename
@@ -437,15 +444,16 @@ upload_field_media_files <- function(hdr, project_id, media_files) {
     }
 
     content_type <- if (!is.null(entry$content_type)) entry$content_type else info$content_type
-    put_req <- httr2::request(entry$signed_url) |>
-      httr2::req_method("PUT") |>
-      httr2::req_headers(`Content-Type` = content_type) |>
+    put_req <- httr2::request(entry$signed_url)  %>% 
+      httr2::req_method("PUT")  %>% 
+      httr2::req_headers(`Content-Type` = content_type)  %>% 
       httr2::req_body_raw(
         readBin(info$filepath, what = "raw", n = file.info(info$filepath)$size),
         type = content_type
       )
 
     httr2::req_perform(put_req)
+    cli::cli_progress_update(id = pb, inc = 1)
   }
 
   invisible(signed)
@@ -765,7 +773,7 @@ get_procedure <- function(schema,
 
   if (length(item_nodes) == 0) {
     message("No items found in selected procedure.")
-    return(invisible(data.frame()))
+    return(invisible(tibble::tibble()))
   }
 
   rows <- lapply(seq_along(item_nodes), function(i) {
@@ -803,7 +811,7 @@ get_procedure <- function(schema,
       req_str <- as.character(req_val)
     }
 
-    data.frame(
+    tibble::tibble(
       item_id          = if (!is.null(node$item_id)) as.integer(node$item_id) else NA_integer_,
       item_uuid        = as.character(node$item_uuid),
       item_name        = as.character(item_name %||% ""),
@@ -841,56 +849,82 @@ get_procedure <- function(schema,
 }
 
 
+# Taxonomic rank columns recognised for a "label" data_type item, ordered
+# most specific to least. Not every organism is identified all the way to
+# species - when `species` is blank for a row/observation, the first
+# non-blank rank moving up this list is used instead (e.g. one only
+# identified to genus is still uploaded, using that genus). All of these are
+# optional; looked up by fixed column name, not by matching the label item's
+# own item_name.
+.taxonomy_ranks <- c("species", "genus", "family", "order", "class", "phylum", "kingdom")
+
+# Internal: the coalesced taxonomic label for one row - the value of the
+# most specific non-blank rank column present in `data`. Returns NA if every
+# rank column is blank or absent for this row.
+.coalesce_taxonomic_label <- function(data, r) {
+  for (rank in .taxonomy_ranks) {
+    if (!rank %in% names(data)) next
+    val <- trimws(as.character(data[[rank]][[r]]))
+    if (!is.na(val) && nzchar(val) && !identical(val, "NA")) return(val)
+  }
+  NA_character_
+}
+
+
 #' @title Validate CSV Against Procedure
 #'
 #' @description
-#' Checks an observation CSV against a procedure object returned by
-#' \code{get_procedure()}. Two CSV layouts are supported and
-#' auto-detected:
+#' Checks a wide-format observation table (one row per feature; procedure
+#' item names spread as column headers) against a procedure object returned
+#' by \code{get_procedure()}, and mandatorily validates every row the same
+#' way \code{upload_observations_from_csv()} would build it - including
+#' checking any \code{label} data_type value against the label database.
 #'
-#' \strong{Long format} -- one row per observation item. Has an
-#' \code{item_name} column and a \code{data} column. Rows sharing the
-#' same lat/lon will become observations under the same parent feature.
+#' The table must have one column per procedure item (matched by name),
+#' plus \code{longitude}, \code{latitude}, and \code{timestamp} columns.
 #'
-#' \strong{Wide format} -- one row per feature. Procedure item names are
-#' spread as column headers; each row contains all item values for one
-#' feature. Must still have \code{longitude}, \code{latitude}, and
-#' \code{timestamp} columns.
+#' If the procedure has a \code{label} data_type item, the table should carry
+#' taxonomic rank columns - \code{species}, \code{genus}, \code{family},
+#' \code{order}, \code{class}, \code{phylum}, \code{kingdom} - looked up by
+#' those fixed names, not by matching the label item's own item_name. Not
+#' every organism is identified all the way to species: the most specific
+#' non-blank rank is used (e.g. one only identified to genus still gets
+#' checked/uploaded using that genus). Every unique resulting value is
+#' checked against the wider IUCN species database (via
+#' \link{getIUCNLabels}) once; matching is an exact (case-insensitive) match
+#' against a returned row's name.
 #'
-#' The format is detected automatically: if the CSV contains a column
-#' matching \code{item_name_col} it is treated as long format, otherwise
-#' wide format is assumed. Override with \code{format = "long"} or
-#' \code{format = "wide"}.
-#'
-#' The timestamp column must use the strict ISO-8601 UTC format
-#' \code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}); values
-#' in any other format are reported as issues.
+#' An observation is only valid if \strong{every} field on it validates:
+#' longitude/latitude parse as decimals, the timestamp parses (via
+#' \code{lubridate::as_datetime()}), every referenced media file exists on
+#' disk, every label value matches the label database, and every other value
+#' matches its declared data_type. A single bad field rejects the whole
+#' observation, mirroring \code{check_edna_labels()}/\code{upload_edna_records()}'s
+#' status-gated pattern.
 #'
 #' @param procedure Named list returned by \code{get_procedure()}.
-#' @param csv_path Path to the CSV file to validate.
-#' @param format One of \code{"auto"} (default), \code{"long"}, or
-#'   \code{"wide"}.
-#' @param item_name_col Column holding item names (long format only).
-#'   Default \code{"item_name"}.
-#' @param value_col Column holding text values (long format only).
-#'   Default \code{"data"}.
-#' @param numeric_value_col Column holding numeric values (long format
-#'   only). Default \code{"numbers"}.
+#' @param observation_data Data frame of observation rows - one row per
+#'   feature, with procedure item names as column headers.
+#' @param hdr A base URL and API key returned by \link{auth_headers} or
+#'   \link{auth_headers_dev}. Required (not optional): it is used to check
+#'   any \code{label} data_type values against the label database via
+#'   \link{getIUCNLabels}, and this check cannot be silently skipped.
 #' @param lon_col Longitude column. Default \code{"longitude"}.
 #' @param lat_col Latitude column. Default \code{"latitude"}.
-#' @param timestamp_col Timestamp column. Default \code{"timestamp"}. Values
-#'   must be in the strict format \code{yyyy-mm-ddThh:mm:ssZ}.
+#' @param timestamp_col Timestamp column. Default \code{"timestamp"}.
 #'
-#' @return A list (invisibly) with elements:
+#' @return (Invisibly) \code{observation_data}, with two columns added:
 #'   \describe{
-#'     \item{format}{Detected or specified format: \code{"long"} or \code{"wide"}.}
-#'     \item{matched_items}{Procedure items found in the CSV.}
-#'     \item{unrecognised_names}{Item names/columns in the CSV not in the procedure.}
-#'     \item{missing_items}{Procedure items absent from the CSV.}
-#'     \item{type_issues}{Data frame of value/data_type conflicts.}
-#'     \item{feature_groups}{How rows map to parent features.}
-#'     \item{valid}{Logical; \code{TRUE} when no blocking issues found.}
+#'     \item{status}{\code{"success"} or \code{"rejected"} for that row/observation.}
+#'     \item{message}{Why it was rejected (blank on success) - bad timestamp,
+#'       non-decimal lon/lat, missing media file, unmatched label, or a
+#'       wrong-typed value.}
 #'   }
+#'   Two further columns, \code{.payload} and \code{.media}, carry the
+#'   already-built upload payload (including the label database check) for
+#'   each row - pass this whole data frame as \code{validated} to
+#'   \link{upload_observations_from_csv} to upload it directly, with no
+#'   rebuilding and no re-checking any labels.
 #'
 #' @examples
 #' \dontrun{
@@ -899,23 +933,16 @@ get_procedure <- function(schema,
 #'   procedure <- get_procedure(schema,
 #'     system_name = "Plante Ivindo", procedure_name = "Arbre")
 #'
-#'   # Long format
-#'   validate_csv_against_procedure(procedure,
-#'     csv_path = "tutorials/example_observation_data.csv")
-#'
-#'   # Wide format (auto-detected or explicit)
-#'   validate_csv_against_procedure(procedure,
-#'     csv_path = "tutorials/example_wide.csv", format = "wide")
+#'   observation_data <- readr::read_csv("tutorials/example_wide.csv")
+#'   validated <- validate_csv_against_procedure(procedure,
+#'     observation_data = observation_data, hdr = hdr)
 #' }
 #'
 #' @author Adam Varley
 #' @export
 validate_csv_against_procedure <- function(procedure,
-                                           csv_path,
-                                           format            = "auto",
-                                           item_name_col     = "item_name",
-                                           value_col         = "data",
-                                           numeric_value_col = "numbers",
+                                           observation_data,
+                                           hdr,
                                            lon_col           = "longitude",
                                            lat_col           = "latitude",
                                            timestamp_col     = "timestamp") {
@@ -929,88 +956,115 @@ validate_csv_against_procedure <- function(procedure,
   proc_procedure_id <- procedure$procedure_id %||% NA_integer_
   proc_system_name  <- procedure$system_name  %||% ""
   proc_proc_name    <- procedure$procedure_name %||% ""
+  procedure_items <- procedure$items
 
-  # Work with items data frame
-  procedure <- procedure$items
-  if (!file.exists(csv_path)) {
-    stop("csv_path does not exist: ", csv_path)
-  }
-  format <- match.arg(format, c("auto", "long", "wide"))
+  # ---- Column-mapping report (pure, no network) ---------------------------
+  # Label items are resolved via the fixed taxonomic rank columns (see
+  # below), not by matching their own item_name, so they're reported
+  # separately rather than through the normal column/item-name matching.
+  label_items     <- procedure_items[procedure_items$data_type == "label", , drop = FALSE]
+  matchable_items <- procedure_items[procedure_items$data_type != "label", , drop = FALSE]
+  matchable_norm  <- normalize_lookup_value(matchable_items$item_name)
 
-  csv <- read_observation_csv(csv_path)
+  meta_cols <- c(lon_col, lat_col, timestamp_col, intersect(.taxonomy_ranks, names(observation_data)))
+  item_cols <- setdiff(names(observation_data), meta_cols)
+  resolved  <- .resolve_item_matches(matchable_items, matchable_norm, normalize_lookup_value(item_cols), item_cols,
+                                     "column", "CSV column(s)")
 
-  # ---- Auto-detect format -----------------------------------------------
-  detected_format <- if (format == "auto") {
-    if (item_name_col %in% names(csv)) "long" else "wide"
-  } else {
-    format
-  }
+  # ---- Mandatory validation: build against the procedure using the exact
+  # same logic upload_observations_from_csv() uses, so a CSV that
+  # validates here is guaranteed to build identically at upload time. -------
+  built <- tryCatch(
+    build_upload_observations_from_table(
+      data          = observation_data,
+      procedure     = procedure,
+      lon_col       = lon_col,
+      lat_col       = lat_col,
+      timestamp_col = timestamp_col
+    ),
+    error = function(e) {
+      list(resolved_rows = 0, rejected = list(), build_error = conditionMessage(e))
+    }
+  )
 
-  message("Detected CSV format: ", detected_format)
+  # ---- Check every label value used against the label database - the only
+  # network call this function makes (build_upload_observations_from_table()
+  # is fully offline). ------------------------------------------------------
+  label_uuid <- procedure_items$item_uuid[procedure_items$data_type == "label"]
+  label_uuid <- if (length(label_uuid) > 0) label_uuid[[1]] else NA_character_
 
-  # ---- Shared lookups ---------------------------------------------------
-  dt_lookup <- stats::setNames(procedure$data_type, normalize_lookup_value(procedure$item_name))
-  ch_lookup <- stats::setNames(procedure$choices,   normalize_lookup_value(procedure$item_name))
-  proc_norm <- normalize_lookup_value(procedure$item_name)
-
-  # Internal: check a single value against its expected data_type
-  check_value <- function(item_name_norm, effective_val, row_num) {
-    dt <- dt_lookup[item_name_norm]
-    if (is.na(dt) || !nzchar(dt)) return(NULL)
-    if (!nzchar(effective_val) || identical(effective_val, "NA")) return(NULL)
-    dt_lower <- tolower(dt)
-    problem  <- ""
-    if (grepl("num|int|float|double|decimal|real", dt_lower)) {
-      if (is.na(suppressWarnings(as.numeric(effective_val)))) {
-        problem <- paste0("expected numeric for data_type '", dt, "', got: '", effective_val, "'")
-      }
-    } else if (grepl("bool", dt_lower)) {
-      if (!tolower(effective_val) %in% c("true", "false", "yes", "no", "1", "0")) {
-        problem <- paste0("expected boolean for data_type '", dt, "', got: '", effective_val, "'")
-      }
-    } else if (grepl("choice", dt_lower)) {
-      choices_raw <- ch_lookup[item_name_norm]
-      if (!is.na(choices_raw) && nzchar(choices_raw)) {
-        valid_choices <- trimws(strsplit(choices_raw, "\\|")[[1]])
-        if (!effective_val %in% valid_choices) {
-          problem <- paste0("'", effective_val, "' not in choices: ", paste(valid_choices, collapse = " | "))
-        }
+  label_bad <- character()  # source_ids (row number) whose label failed
+  if (!is.na(label_uuid) && length(built$observations) > 0) {
+    label_vals <- vapply(built$observations, function(o) as.character(o$values[[label_uuid]] %||% NA_character_), character(1))
+    checked    <- which(!is.na(label_vals))
+    if (length(checked) > 0) {
+      label_ok <- .check_label_values(hdr, label_vals[checked])
+      for (i in checked) {
+        if (!isTRUE(label_ok[[label_vals[i]]])) label_bad <- c(label_bad, built$source_ids[i])
       }
     }
-    if (!nzchar(problem)) return(NULL)
-    list(row = row_num, data_type = dt, value = effective_val, problem = problem)
   }
 
-  # ---- Dispatch to format-specific checks --------------------------------
-  if (detected_format == "long") {
-    result <- .validate_long(
-      csv, procedure, proc_norm,
-      check_value, item_name_col, value_col, numeric_value_col,
-      lon_col, lat_col, timestamp_col
-    )
+  # ---- Build the returned data frame: the original CSV, plus status,
+  # message, and the already-built payload ready for
+  # upload_observations_from_csv() - no rebuilding, no rechecking labels. ---
+  n       <- nrow(observation_data)
+  status  <- rep("success", n)
+  msg     <- rep("", n)
+  payload <- vector("list", n)
+  media   <- replicate(n, list(), simplify = FALSE)
+
+  if (!is.null(built$build_error)) {
+    status[] <- "rejected"
+    msg[]    <- built$build_error
   } else {
-    result <- .validate_wide(
-      csv, procedure, proc_norm,
-      check_value, lon_col, lat_col, timestamp_col
-    )
+    for (rj in built$rejected) {
+      status[rj$row] <- "rejected"
+      msg[rj$row]    <- paste(rj$reasons, collapse = "; ")
+    }
+    accounted <- vapply(built$rejected, function(rj) rj$row, integer(1))
+    for (i in seq_along(built$observations)) {
+      r <- as.integer(built$source_ids[i])
+      accounted <- c(accounted, r)
+      if (built$source_ids[i] %in% label_bad) {
+        status[r] <- "rejected"
+        msg[r]    <- paste0("'", built$observations[[i]]$values[[label_uuid]], "' not found in label database")
+      } else {
+        payload[[r]] <- built$observations[[i]]
+      }
+    }
+    for (m in built$media_uploads) {
+      r <- as.integer(built$source_ids[m$obs_index])
+      if (!is.null(payload[[r]])) {
+        media[[r]] <- c(media[[r]], list(list(
+          item_uuid = m$item_uuid, filepath = m$filepath,
+          data_type = m$data_type, content_type = m$content_type
+        )))
+      }
+    }
+    unaccounted <- setdiff(seq_len(n), accounted)
+    status[unaccounted] <- "rejected"
+    msg[unaccounted]     <- "no values provided for this row"
   }
 
-  result$format       <- detected_format
-  result$system_id    <- proc_system_id
-  result$procedure_id <- proc_procedure_id
+  valid <- length(resolved$issues) == 0 && all(status == "success")
 
-  # ---- Print summary -----------------------------------------------------
-  message("\n--- CSV Validation Report (", detected_format, " format) ---")
+  # ---- Print summary -------------------------------------------------------
+  message("\n--- CSV Validation Report ---")
   message("System: ", proc_system_name, " (id: ", proc_system_id, ")")
   message("Procedure: ", proc_proc_name, " (id: ", proc_procedure_id, ")")
 
-  message("Matched items (", nrow(result$matched_items), "/", nrow(procedure), "):")
-  if (nrow(result$matched_items) > 0) {
-    print(result$matched_items[, c("item_name", "data_type"), drop = FALSE])
+  message("Matched items (", nrow(resolved$matched_items), "/", nrow(matchable_items), "):")
+  if (nrow(resolved$matched_items) > 0) {
+    print(resolved$matched_items[, c("item_name", "data_type"), drop = FALSE])
   }
-  if (nrow(result$missing_items) > 0) {
-    required_miss <- result$missing_items[is.na(result$missing_items$nullable) | !result$missing_items$nullable, , drop = FALSE]
-    optional_miss <- result$missing_items[!is.na(result$missing_items$nullable) & result$missing_items$nullable, , drop = FALSE]
+  if (nrow(label_items) > 0) {
+    message("\nLabel item(s) (checked via taxonomic rank columns - species/genus/family/order/class/phylum/kingdom - not by name):")
+    print(label_items[, c("item_name", "data_type"), drop = FALSE])
+  }
+  if (nrow(resolved$missing_items) > 0) {
+    required_miss <- resolved$missing_items[is.na(resolved$missing_items$nullable) | !resolved$missing_items$nullable, , drop = FALSE]
+    optional_miss <- resolved$missing_items[!is.na(resolved$missing_items$nullable) & resolved$missing_items$nullable, , drop = FALSE]
     if (nrow(required_miss) > 0) {
       message("\nMissing required items (", nrow(required_miss), "):")
       print(required_miss[, c("item_name", "data_type", "nullable"), drop = FALSE])
@@ -1020,29 +1074,35 @@ validate_csv_against_procedure <- function(procedure,
       print(optional_miss[, c("item_name", "data_type", "nullable"), drop = FALSE])
     }
   }
-  if (length(result$unrecognised_names) > 0) {
+  if (length(resolved$unrecognised_names) > 0) {
     message("\nUnrecognised item names in CSV:")
-    print(result$unrecognised_names)
-  }
-  if (nrow(result$type_issues) > 0) {
-    message("\nData type issues:")
-    print(result$type_issues)
-  }
-  message("\nFeature groups (", nrow(result$feature_groups), " parent feature(s)):")
-  print(result$feature_groups)
-  message("\nValid: ", result$valid)
-  if (length(result$issues) > 0) {
-    message("Issues:\n  ", paste(result$issues, collapse = "\n  "))
+    print(resolved$unrecognised_names)
   }
 
-  return(invisible(result[setdiff(names(result), "issues")]))
+  n_rejected <- sum(status == "rejected")
+  if (n_rejected > 0) {
+    message("\nRejected row(s) (", n_rejected, "), not eligible for upload:")
+    for (i in which(status == "rejected")) {
+      message("  [", i, "] ", msg[i])
+    }
+  }
+
+  message("\n", sum(status == "success"), " of ", n, " row(s) would be uploaded.")
+  message("\nValid: ", valid)
+
+  result <- observation_data
+  result$status   <- status
+  result$message  <- msg
+  result$.payload <- payload
+  result$.media   <- media
+
+  return(invisible(result))
 }
 
 
 # Internal: resolves which procedure items are present/absent given the
-# normalized names found in a CSV (item names for long format, column
-# headers for wide format), and builds the associated issue messages.
-# Shared by .validate_long and .validate_wide.
+# normalized column headers found in a CSV, and builds the associated issue
+# messages.
 .resolve_item_matches <- function(procedure, proc_norm, found_norm, found_names,
                                   missing_label, unrecognised_label) {
   matched_mask       <- proc_norm %in% found_norm
@@ -1075,170 +1135,6 @@ validate_csv_against_procedure <- function(procedure,
   )
 }
 
-
-# Internal: collapses per-cell data-type check hits into a data frame, for
-# both .validate_long and .validate_wide.
-.build_type_issues_frame <- function(type_rows) {
-  if (length(type_rows) == 0) {
-    return(data.frame(row = integer(), item_name = character(), data_type = character(),
-                      value = character(), problem = character(), stringsAsFactors = FALSE))
-  }
-  do.call(rbind, lapply(type_rows, as.data.frame, stringsAsFactors = FALSE))
-}
-
-
-# Internal: validate long-format CSV.
-.validate_long <- function(csv, procedure, proc_norm,
-                           check_value, item_name_col, value_col,
-                           numeric_value_col, lon_col, lat_col, timestamp_col) {
-  issues <- character()
-
-  required_cols <- c(lon_col, lat_col, timestamp_col, item_name_col, value_col)
-  missing_std   <- setdiff(required_cols, names(csv))
-  if (length(missing_std) > 0) {
-    issues <- c(issues, paste("Missing columns:", paste(missing_std, collapse = ", ")))
-  }
-
-  bad_timestamps <- .find_bad_timestamps(csv, timestamp_col)
-  if (length(bad_timestamps) > 0) {
-    issues <- c(issues, paste0(
-      length(bad_timestamps),
-      " timestamp value(s) not in the required format yyyy-mm-ddThh:mm:ssZ: ",
-      paste(bad_timestamps, collapse = ", ")
-    ))
-  }
-
-  csv_item_names <- if (item_name_col %in% names(csv)) {
-    unique(trimws(csv[[item_name_col]]))
-  } else character()
-  csv_item_names <- csv_item_names[nzchar(csv_item_names)]
-  csv_norm       <- normalize_lookup_value(csv_item_names)
-
-  resolved           <- .resolve_item_matches(procedure, proc_norm, csv_norm, csv_item_names,
-                                              "rows", "CSV item name(s)")
-  matched_items      <- resolved$matched_items
-  missing_items      <- resolved$missing_items
-  unrecognised_names <- resolved$unrecognised_names
-  issues             <- c(issues, resolved$issues)
-
-  # Data type checks
-  type_rows <- list()
-  if (item_name_col %in% names(csv) && value_col %in% names(csv)) {
-    for (r in seq_len(nrow(csv))) {
-      nm    <- normalize_lookup_value(trimws(as.character(csv[[item_name_col]][r])))
-      if (!nzchar(nm)) next
-      v_txt <- trimws(as.character(csv[[value_col]][r]))
-      v_num <- if (numeric_value_col %in% names(csv)) csv[[numeric_value_col]][r] else NA
-      eff   <- if (nzchar(v_txt)) v_txt else as.character(v_num)
-      hit   <- check_value(nm, eff, r)
-      if (!is.null(hit)) {
-        type_rows[[length(type_rows) + 1]] <- c(list(item_name = as.character(csv[[item_name_col]][r])), hit)
-      }
-    }
-  }
-  type_issues <- .build_type_issues_frame(type_rows)
-  if (nrow(type_issues) > 0) issues <- c(issues, paste(nrow(type_issues), "data type issue(s) found (see $type_issues)"))
-
-  # Feature grouping
-  feature_groups <- .feature_groups_long(csv, lon_col, lat_col, item_name_col)
-
-  list(
-    matched_items      = matched_items,
-    unrecognised_names = unrecognised_names,
-    missing_items      = missing_items,
-    type_issues        = type_issues,
-    feature_groups     = feature_groups,
-    valid              = length(issues) == 0,
-    issues             = issues
-  )
-}
-
-
-# Internal: validate wide-format CSV.
-.validate_wide <- function(csv, procedure, proc_norm,
-                           check_value, lon_col, lat_col, timestamp_col) {
-  issues <- character()
-
-  meta_cols    <- c(lon_col, lat_col, timestamp_col)
-  missing_meta <- setdiff(meta_cols, names(csv))
-  if (length(missing_meta) > 0) {
-    issues <- c(issues, paste("Missing metadata columns:", paste(missing_meta, collapse = ", ")))
-  }
-
-  bad_timestamps <- .find_bad_timestamps(csv, timestamp_col)
-  if (length(bad_timestamps) > 0) {
-    issues <- c(issues, paste0(
-      length(bad_timestamps),
-      " timestamp value(s) not in the required format yyyy-mm-ddThh:mm:ssZ: ",
-      paste(bad_timestamps, collapse = ", ")
-    ))
-  }
-
-  # Item columns = all non-metadata columns
-  item_cols  <- setdiff(names(csv), meta_cols)
-  col_norm   <- normalize_lookup_value(item_cols)
-
-  resolved           <- .resolve_item_matches(procedure, proc_norm, col_norm, item_cols,
-                                              "column", "CSV column(s)")
-  matched_items      <- resolved$matched_items
-  missing_items      <- resolved$missing_items
-  unrecognised_names <- resolved$unrecognised_names
-  issues             <- c(issues, resolved$issues)
-
-  # Data type checks -- one cell per matched column per row
-  type_rows <- list()
-  for (col in item_cols) {
-    nm <- normalize_lookup_value(col)
-    if (!nm %in% proc_norm) next
-    for (r in seq_len(nrow(csv))) {
-      eff <- trimws(as.character(csv[[col]][r]))
-      hit <- check_value(nm, eff, r)
-      if (!is.null(hit)) {
-        type_rows[[length(type_rows) + 1]] <- c(list(item_name = col), hit)
-      }
-    }
-  }
-  type_issues <- .build_type_issues_frame(type_rows)
-  if (nrow(type_issues) > 0) issues <- c(issues, paste(nrow(type_issues), "data type issue(s) found (see $type_issues)"))
-
-  # Feature grouping -- each row is already one feature
-  feature_groups <- data.frame(
-    longitude  = if (lon_col %in% names(csv)) suppressWarnings(as.numeric(csv[[lon_col]])) else rep(NA_real_, nrow(csv)),
-    latitude   = if (lat_col %in% names(csv)) suppressWarnings(as.numeric(csv[[lat_col]])) else rep(NA_real_, nrow(csv)),
-    n_items    = length(item_cols),
-    stringsAsFactors = FALSE
-  )
-
-  list(
-    matched_items      = matched_items,
-    unrecognised_names = unrecognised_names,
-    missing_items      = missing_items,
-    type_issues        = type_issues,
-    feature_groups     = feature_groups,
-    valid              = length(issues) == 0,
-    issues             = issues
-  )
-}
-
-
-# Internal: build feature-group summary for long-format CSV.
-.feature_groups_long <- function(csv, lon_col, lat_col, item_name_col) {
-  if (!all(c(lon_col, lat_col) %in% names(csv))) {
-    return(data.frame(longitude = numeric(), latitude = numeric(), n_rows = integer(), item_names = character(), stringsAsFactors = FALSE))
-  }
-  lon_vals  <- suppressWarnings(as.numeric(csv[[lon_col]]))
-  lat_vals  <- suppressWarnings(as.numeric(csv[[lat_col]]))
-  group_key <- paste0(round(lon_vals, 7), "::", round(lat_vals, 7))
-  do.call(rbind, lapply(split(csv, group_key), function(g) {
-    data.frame(
-      longitude  = suppressWarnings(as.numeric(g[[lon_col]][1])),
-      latitude   = suppressWarnings(as.numeric(g[[lat_col]][1])),
-      n_rows     = nrow(g),
-      item_names = if (item_name_col %in% names(g)) paste(trimws(g[[item_name_col]]), collapse = " | ") else "",
-      stringsAsFactors = FALSE
-    )
-  }))
-}
 
 
 #' @title Build Observation Record
@@ -1501,22 +1397,6 @@ normalize_lookup_value <- function(x) {
 }
 
 
-# Internal helper to read an observation CSV as a plain character data frame.
-# Every column is forced to character: readr's automatic type guessing would
-# otherwise parse ISO-8601-looking timestamp columns into POSIXct and
-# silently truncate them (losing time-of-day). Downstream code coerces
-# numeric/boolean values itself based on the procedure's declared data_type.
-read_observation_csv <- function(csv_path) {
-  csv <- readr::read_csv(
-    csv_path,
-    col_types      = readr::cols(.default = readr::col_character()),
-    locale         = readr::locale(encoding = "UTF-8"),
-    name_repair    = "minimal",
-    progress       = FALSE,
-    show_col_types = FALSE
-  )
-  as.data.frame(csv, stringsAsFactors = FALSE)
-}
 
 
 # Internal helper to coerce a text value to a numeric when the target item's
@@ -1526,7 +1406,7 @@ coerce_value_by_data_type <- function(value, data_type) {
   if (is.null(data_type) || is.na(data_type) || !nzchar(data_type)) {
     return(value)
   }
-  if (grepl("num|int|float|double|decimal|real", tolower(data_type))) {
+  if (grepl("num|int|float|double|decimal|real", data_type)) {
     numeric_candidate <- suppressWarnings(as.numeric(value))
     if (!is.na(numeric_candidate)) {
       return(numeric_candidate)
@@ -1536,43 +1416,90 @@ coerce_value_by_data_type <- function(value, data_type) {
 }
 
 
-# The API's uploadObservations endpoint requires the outgoing "recorded_at"
-# field (a fixed name in the API contract - not to be renamed) to be strict
-# ISO-8601 UTC: yyyy-mm-ddThh:mm:ssZ. These helpers enforce that on the
-# incoming timestamp column so a value the API will reject is never silently
-# forwarded.
-.TIMESTAMP_FORMAT <- "%Y-%m-%dT%H:%M:%SZ"
+# data_type values that reference a local media file rather than a plain
+# text/numeric value. The cell holds a local file path; uploading it to cloud
+# storage (via a signed URL) and substituting the returned blob_path happens
+# later in upload_observations_from_csv(), since build_upload_observations_from_table()
+# has no network access by design.
+.MEDIA_DATA_TYPES <- c("phone-photo", "phone-video", "phone-audio")
 
-# Distinct non-empty values in `timestamp_col` that fail strict parsing, for
-# validate_csv_against_procedure()'s issue reporting (non-fatal).
-.find_bad_timestamps <- function(csv, timestamp_col) {
-  if (!timestamp_col %in% names(csv)) {
-    return(character())
-  }
-  raw_vals <- trimws(as.character(csv[[timestamp_col]]))
-  raw_vals <- raw_vals[nzchar(raw_vals) & raw_vals != "NA"]
-  if (length(raw_vals) == 0) {
-    return(character())
-  }
-  parsed <- as.POSIXct(raw_vals, format = .TIMESTAMP_FORMAT, tz = "UTC")
-  unique(raw_vals[is.na(parsed)])
+.media_content_type <- function(data_type) {
+  switch(data_type,
+    "phone-photo" = "image/jpeg",
+    "phone-video" = "video/mp4",
+    "phone-audio" = "audio/mpeg",
+    "application/octet-stream"
+  )
 }
 
-# Validates and normalises timestamp values, stopping with a clear error if
-# any value isn't strict ISO-8601 UTC (yyyy-mm-ddThh:mm:ssZ).
-validate_timestamps <- function(raw_values) {
-  raw_values <- as.character(raw_values)
-  parsed <- as.POSIXct(raw_values, format = .TIMESTAMP_FORMAT, tz = "UTC")
-  bad <- unique(raw_values[is.na(parsed)])
-  if (length(bad) > 0) {
-    stop(
-      "Invalid timestamp value(s): ", paste(bad, collapse = ", "),
-      ". Timestamps must be in the strict format yyyy-mm-ddThh:mm:ssZ ",
-      "(e.g. 2025-10-29T00:00:00Z).",
-      call. = FALSE
-    )
+
+# Internal: checks each unique species value against the wider IUCN species
+# database via getIUCNLabels(). getIUCNLabels() takes one search_term per
+# call (it's a search endpoint, not a batch lookup), so unique values are
+# deduplicated to avoid one call per row. A species counts as valid only if
+# a returned row's `label` or `genus`+`species` is an exact (case-insensitive,
+# trimmed) match - a plain text search can otherwise return unrelated
+# partial matches. Returns a named logical vector keyed by the original
+# (trimmed) species value.
+.check_label_values <- function(hdr, values) {
+  unique_values <- unique(trimws(values))
+  unique_values <- unique_values[nzchar(unique_values)]
+
+  if (length(unique_values) == 0) {
+    return(stats::setNames(logical(0), character(0)))
   }
-  format(parsed, .TIMESTAMP_FORMAT)
+
+  pb <- cli::cli_progress_bar(
+    format = "Checking {cli::pb_current}/{cli::pb_total} label(s) against the database | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = length(unique_values),
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C), which tryCatch's `error` handler does not
+  # catch and would otherwise leave it animating for the rest of the session.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
+  found <- logical(length(unique_values))
+  for (i in seq_along(unique_values)) {
+    val      <- unique_values[i]
+    rows     <- getIUCNLabels(hdr, offset = 0, search_term = val)$data
+    found[i] <- nrow(rows) > 0 && any(
+      tolower(trimws(as.character(rows$label))) == tolower(val) |
+      tolower(trimws(paste(rows$genus, rows$species))) == tolower(val)
+    )
+    cli::cli_progress_update(id = pb, inc = 1)
+    if (i < length(unique_values)) Sys.sleep(0.2)  # throttle to avoid tripping the API's rate limit
+  }
+
+  stats::setNames(found, unique_values)
+}
+
+
+# Internal: TRUE if a non-blank cell value matches what its item's declared
+# data_type requires (numeric/boolean types only - text/choice/instruction
+# accept anything). Media (phone-photo/video/audio) and label types are
+# validated separately (file existence, label database).
+.value_matches_data_type <- function(value, data_type) {
+  dt <- data_type %||% ""
+  if (grepl("num|int|float|double|decimal|real", dt)) {
+    return(!is.na(suppressWarnings(as.numeric(value))))
+  }
+  if (grepl("bool", dt)) {
+    return(tolower(value) %in% c("true", "false", "yes", "no", "1", "0"))
+  }
+  TRUE
+}
+
+
+# The API's uploadObservations endpoint requires the outgoing "recorded_at"
+# field (a fixed name in the API contract - not to be renamed) to be strict
+# ISO-8601 UTC: yyyy-mm-ddThh:mm:ssZ. Incoming timestamps are parsed via
+# lubridate::as_datetime() (any format it recognises) and reformatted to
+# that strict string; values that don't parse become NA_character_ so the
+# caller can reject just that row/observation.
+.parse_timestamps <- function(raw_values) {
+  parsed <- suppressWarnings(lubridate::as_datetime(as.character(raw_values), tz = "UTC"))
+  ifelse(is.na(parsed), NA_character_, strftime(parsed, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
 }
 
 
@@ -1709,22 +1636,34 @@ resolve_schema_indices <- function(schema,
 #' @title Build Upload Observations From Table
 #'
 #' @description
-#' Converts a flat data frame into a list of \code{RObservationRecord} payloads
-#' for \code{upload_observations()}, automatically resolving item UUIDs from
-#' project schema when needed.
+#' Converts a wide-format data frame - one row per feature, procedure item
+#' names spread as column headers - into a list of \code{RObservationRecord}
+#' payloads for \code{upload_observations()}, automatically resolving item
+#' UUIDs from project schema when needed.
 #'
 #' Supply either a \code{procedure} list (returned by \code{get_procedure()})
 #' or a raw \code{schema} with \code{system_name}/\code{procedure_name}.
 #' When \code{procedure} is provided it takes precedence.
 #'
-#' Two table layouts are supported and auto-detected, mirroring
-#' \code{validate_csv_against_procedure()}: \strong{long} format (one row per
-#' observation item, with \code{item_name}/\code{item_uuid} and \code{data}
-#' columns) and \strong{wide} format (one row per feature, with procedure item
-#' names spread as column headers). Override detection with
-#' \code{format = "long"} or \code{format = "wide"}.
+#' Every observation is validated as a whole: longitude/latitude must parse
+#' as decimals, the timestamp must parse (via \code{lubridate::as_datetime()}
+#' - any format it recognises), every referenced media file must exist on
+#' disk, and every other value must match its declared data_type. A single
+#' bad field rejects the whole observation, which is then reported in
+#' \code{rejected} instead of being built/uploaded. This function is fully
+#' offline - it does not connect to NatureCube.
 #'
-#' @param data Data frame of observation rows.
+#' If the procedure has a \code{label} data_type item, its value is read
+#' from fixed taxonomic rank columns - \code{species}, \code{genus},
+#' \code{family}, \code{order}, \code{class}, \code{phylum}, \code{kingdom} -
+#' not from a column matching the item's own name. The most specific
+#' non-blank rank is used (an organism only identified to genus still gets
+#' uploaded, using that genus). This function does not check that value
+#' against the label database - only \link{validate_csv_against_procedure}
+#' does, since that's the only step here that needs a NatureCube connection.
+#'
+#' @param data Data frame of observation rows - one row per feature, with
+#'   procedure item names as column headers.
 #' @param procedure Named list returned by \code{get_procedure()}. Takes
 #'   precedence over \code{schema} when provided.
 #' @param schema Project schema returned by \code{get_project_systems()}.
@@ -1736,28 +1675,19 @@ resolve_schema_indices <- function(schema,
 #'   Optional.
 #' @param procedure_name Character procedure name used to resolve procedure
 #'   index. Optional.
-#' @param format One of \code{"auto"} (default), \code{"long"}, or
-#'   \code{"wide"}. When \code{"auto"}, long format is assumed if
-#'   \code{item_name_col} is present in \code{data}, otherwise wide format.
 #' @param lon_col Character name of longitude column. Default \code{"longitude"}.
 #' @param lat_col Character name of latitude column. Default \code{"latitude"}.
 #' @param timestamp_col Character name of the timestamp column. Default
-#'   \code{"timestamp"}. Values must be in the strict ISO-8601 UTC format
-#'   \code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}) -- any
-#'   other format stops the build with an error listing the offending
-#'   value(s).
-#' @param item_uuid_col Character name of item UUID column.
-#'   Default \code{"item_uuid"}.
-#' @param item_name_col Character name of item name column.
-#'   Default \code{"item_name"}.
-#' @param value_col Character name of primary value column. Default \code{"data"}.
-#' @param numeric_value_col Character name of numeric fallback value column.
-#'   Default \code{"numbers"}.
-#' @param observation_id_col Character name of observation ID column.
-#'   Default \code{"observation_id"}.
+#'   \code{"timestamp"}.
 #'
-#' @return A list with \code{observations}, \code{unresolved_rows}, and
-#'   \code{resolved_rows}.
+#' @return A list with \code{observations} (only those that passed every
+#'   check), \code{source_ids} (the original CSV row number, parallel to
+#'   \code{observations} - use this to trace an uploaded observation back to
+#'   its source row), \code{unresolved_rows},
+#'   \code{resolved_rows}, \code{media_uploads} (local files pending
+#'   signed-URL upload for surviving observations), and \code{rejected}
+#'   (observations dropped for any failed check, each with an identifier and
+#'   the reasons).
 #'
 #' @examples
 #' \dontrun{
@@ -1782,31 +1712,14 @@ build_upload_observations_from_table <- function(data,
                                                  procedure_index = NULL,
                                                  system_name = NULL,
                                                  procedure_name = NULL,
-                                                 format = "auto",
                                                  lon_col = "longitude",
                                                  lat_col = "latitude",
-                                                 timestamp_col = "timestamp",
-                                                 item_uuid_col = "item_uuid",
-                                                 item_name_col = "item_name",
-                                                 value_col = "data",
-                                                 numeric_value_col = "numbers",
-                                                 observation_id_col = "observation_id") {
-
-  if (!is.data.frame(data) || nrow(data) == 0) {
-    stop("data must be a non-empty data frame")
-  }
+                                                 timestamp_col = "timestamp") {
 
   required_cols <- c(lon_col, lat_col, timestamp_col)
   missing_cols <- setdiff(required_cols, names(data))
   if (length(missing_cols) > 0) {
     stop("Missing required columns in data: ", paste(missing_cols, collapse = ", "))
-  }
-
-  format <- match.arg(format, c("auto", "long", "wide"))
-  detected_format <- if (format == "auto") {
-    if (item_name_col %in% names(data)) "long" else "wide"
-  } else {
-    format
   }
 
   # Resolve IDs and item dictionary from procedure list or schema
@@ -1836,117 +1749,12 @@ build_upload_observations_from_table <- function(data,
     proc_id  <- as.integer(proc_obj$procedure_id)
   }
 
-  if (detected_format == "wide") {
-    return(.build_wide_observations(
-      data = data, dictionary = dictionary, sys_id = sys_id, proc_id = proc_id,
-      lon_col = lon_col, lat_col = lat_col, timestamp_col = timestamp_col
-    ))
-  }
-
-  .build_long_observations(
+  .build_wide_observations(
     data = data, dictionary = dictionary, sys_id = sys_id, proc_id = proc_id,
-    lon_col = lon_col, lat_col = lat_col, timestamp_col = timestamp_col,
-    item_uuid_col = item_uuid_col, item_name_col = item_name_col,
-    value_col = value_col, numeric_value_col = numeric_value_col,
-    observation_id_col = observation_id_col
+    lon_col = lon_col, lat_col = lat_col, timestamp_col = timestamp_col
   )
 }
 
-
-# Internal: build RObservationRecord payloads from a long-format table
-# (one row per observation item).
-.build_long_observations <- function(data, dictionary, sys_id, proc_id,
-                                     lon_col, lat_col, timestamp_col,
-                                     item_uuid_col, item_name_col,
-                                     value_col, numeric_value_col,
-                                     observation_id_col) {
-
-  data[[item_uuid_col]] <- as.character(data[[item_uuid_col]] %||% "")
-  data[[item_name_col]] <- as.character(data[[item_name_col]] %||% "")
-  data[[value_col]]     <- as.character(data[[value_col]]     %||% "")
-
-  if (!numeric_value_col %in% names(data)) data[[numeric_value_col]] <- NA
-  if (!observation_id_col %in% names(data)) data[[observation_id_col]] <- ""
-
-  name_lookup <- stats::setNames(
-    dictionary$item_uuid,
-    normalize_lookup_value(dictionary$item_name)
-  )
-  dt_by_uuid <- stats::setNames(dictionary$data_type, dictionary$item_uuid)
-
-  resolved_from_name <- name_lookup[normalize_lookup_value(data[[item_name_col]])]
-  resolved_from_name[is.na(resolved_from_name)] <- ""
-
-  explicit_uuid <- trimws(data[[item_uuid_col]])
-  explicit_uuid[is.na(explicit_uuid)] <- ""
-
-  data$.resolved_item_uuid <- ifelse(explicit_uuid != "", explicit_uuid, resolved_from_name)
-
-  has_value   <- trimws(data[[value_col]]) != ""
-  num_vals    <- data[[numeric_value_col]]
-  has_numeric <- !is.na(num_vals) & as.character(num_vals) != ""
-
-  unresolved_mask  <- trimws(data$.resolved_item_uuid) == ""
-  empty_value_mask <- !(has_value | has_numeric)
-
-  valid_rows <- data[!(unresolved_mask | empty_value_mask), , drop = FALSE]
-
-  if (nrow(valid_rows) == 0) {
-    stop("No rows could be converted into observations. Check item UUID/name mapping and values.")
-  }
-
-  iso_timestamp <- validate_timestamps(valid_rows[[timestamp_col]])
-  valid_rows$.iso_timestamp <- iso_timestamp
-
-  lon_vals <- as.numeric(valid_rows[[lon_col]])
-  lat_vals <- as.numeric(valid_rows[[lat_col]])
-
-  obs_ids <- as.character(valid_rows[[observation_id_col]])
-  obs_ids[is.na(obs_ids)] <- ""
-
-  grouping_key <- ifelse(
-    trimws(obs_ids) != "",
-    paste0("obs-id::", trimws(obs_ids)),
-    paste0("coord-time::", round(lon_vals, 7), "::", round(lat_vals, 7), "::", iso_timestamp)
-  )
-
-  split_rows <- split(valid_rows, grouping_key)
-
-  observations <- lapply(split_rows, function(chunk) {
-    chunk_values <- list()
-
-    for (r in seq_len(nrow(chunk))) {
-      row        <- chunk[r, , drop = FALSE]
-      item_uuid  <- as.character(row$.resolved_item_uuid[[1]])
-      value_text <- trimws(as.character(row[[value_col]][[1]] %||% ""))
-      value_num  <- row[[numeric_value_col]][[1]]
-
-      value_to_use <- value_text
-      if (identical(value_to_use, "") && !is.na(value_num) && as.character(value_num) != "") {
-        value_to_use <- as.numeric(value_num)
-      }
-      chunk_values[[item_uuid]] <- coerce_value_by_data_type(value_to_use, dt_by_uuid[item_uuid])
-    }
-
-    list(
-      survey_uuid       = uuid::UUIDgenerate(),
-      project_system_id = sys_id,
-      procedure_id      = proc_id,
-      recorded_at       = chunk$.iso_timestamp[[1]],
-      lon               = as.numeric(chunk[[lon_col]][[1]]),
-      lat               = as.numeric(chunk[[lat_col]][[1]]),
-      values            = as.list(chunk_values)
-    )
-  })
-
-  unresolved_rows <- data[unresolved_mask, c(item_name_col, item_uuid_col), drop = FALSE]
-
-  list(
-    observations    = unname(observations),  # must be unnamed so JSON serialises as array not object
-    resolved_rows   = nrow(valid_rows),
-    unresolved_rows = unresolved_rows
-  )
-}
 
 
 # Internal: build RObservationRecord payloads from a wide-format table
@@ -1954,7 +1762,7 @@ build_upload_observations_from_table <- function(data,
 .build_wide_observations <- function(data, dictionary, sys_id, proc_id,
                                      lon_col, lat_col, timestamp_col) {
 
-  meta_cols <- c(lon_col, lat_col, timestamp_col)
+  meta_cols <- c(lon_col, lat_col, timestamp_col, intersect(.taxonomy_ranks, names(data)))
   item_cols <- setdiff(names(data), meta_cols)
 
   name_lookup <- stats::setNames(
@@ -1966,50 +1774,104 @@ build_upload_observations_from_table <- function(data,
     normalize_lookup_value(dictionary$item_name)
   )
 
+  label_uuid <- dictionary$item_uuid[dictionary$data_type == "label"]
+  label_uuid <- if (length(label_uuid) > 0) label_uuid[[1]] else NA_character_
+
   col_uuid        <- unname(name_lookup[normalize_lookup_value(item_cols)])
-  col_dt          <- unname(dt_lookup[normalize_lookup_value(item_cols)])  
+  col_dt          <- unname(dt_lookup[normalize_lookup_value(item_cols)])
   resolved_cols   <- item_cols[!is.na(col_uuid)]
   resolved_uuids  <- col_uuid[!is.na(col_uuid)]
   resolved_dt     <- col_dt[!is.na(col_uuid)]
   unresolved_cols <- item_cols[is.na(col_uuid)]
 
-  if (length(resolved_cols) == 0) {
+  if (length(resolved_cols) == 0 && is.na(label_uuid)) {
     stop("No columns could be matched to procedure items. Check column names against item_name in the procedure.")
   }
 
-  iso_timestamp <- validate_timestamps(data[[timestamp_col]])
+  iso_timestamp <- .parse_timestamps(data[[timestamp_col]])
+  lon_vals <- suppressWarnings(as.numeric(data[[lon_col]]))
+  lat_vals <- suppressWarnings(as.numeric(data[[lat_col]]))
 
-  lon_vals <- as.numeric(data[[lon_col]])
-  lat_vals <- as.numeric(data[[lat_col]])
-
-  observations <- vector("list", nrow(data))
-  keep <- logical(nrow(data))
-
-  for (r in seq_len(nrow(data))) {
+  # Phase 1: assess every row independently (no network yet).
+  rows <- lapply(seq_len(nrow(data)), function(r) {
+    reasons    <- character()
     row_values <- list()
+    row_media  <- list()
+
+    if (is.na(lon_vals[r]))       reasons <- c(reasons, paste0("longitude '", data[[lon_col]][[r]], "' is not a valid decimal"))
+    if (is.na(lat_vals[r]))       reasons <- c(reasons, paste0("latitude '", data[[lat_col]][[r]], "' is not a valid decimal"))
+    if (is.na(iso_timestamp[r]))  reasons <- c(reasons, paste0("timestamp '", data[[timestamp_col]][[r]], "' could not be parsed"))
 
     for (i in seq_along(resolved_cols)) {
       val_chr <- trimws(as.character(data[[resolved_cols[i]]][[r]]))
-      if (!nzchar(val_chr) || identical(val_chr, "NA")) next
+      if (is.na(val_chr) || !nzchar(val_chr) || identical(val_chr, "NA")) next
+
+      if (resolved_dt[i] %in% .MEDIA_DATA_TYPES) {
+        if (file.exists(val_chr)) {
+          row_media[[resolved_uuids[i]]] <- list(
+            filepath     = val_chr,
+            data_type    = resolved_dt[i],
+            content_type = .media_content_type(resolved_dt[i])
+          )
+        } else {
+          reasons <- c(reasons, paste0(resolved_cols[i], ": file not found: ", val_chr))
+        }
+        next
+      }
+
+      if (!.value_matches_data_type(val_chr, resolved_dt[i])) {
+        reasons <- c(reasons, paste0(resolved_cols[i], ": '", val_chr, "' does not match data_type '", resolved_dt[i], "'"))
+        next
+      }
+
       row_values[[resolved_uuids[i]]] <- coerce_value_by_data_type(val_chr, resolved_dt[i])
     }
 
-    if (length(row_values) == 0) next
+    species <- if (!is.na(label_uuid)) .coalesce_taxonomic_label(data, r) else NA_character_
+    if (!is.na(species)) row_values[[label_uuid]] <- species
 
-    keep[r] <- TRUE
-    observations[[r]] <- list(
+    list(
+      row = r, reasons = reasons, values = row_values, media = row_media,
+      empty = length(row_values) == 0 && length(row_media) == 0 && length(reasons) == 0,
+      timestamp = iso_timestamp[r], lon = lon_vals[r], lat = lat_vals[r]
+    )
+  })
+
+  rows <- Filter(function(x) !x$empty, rows)
+
+  if (length(rows) == 0) {
+    stop("No rows could be converted into observations. Check item column mapping and values.")
+  }
+
+  # Phase 2: only rows with zero reasons become observations; every other
+  # field failure is checked, so one bad field rejects the whole row. Label
+  # values are checked against the database separately, by
+  # validate_csv_against_procedure() - not here, since that's the only step
+  # that needs a NatureCube connection.
+  observations  <- list()
+  source_ids    <- character()  # original CSV row number, parallel to observations
+  media_uploads <- list()
+  rejected      <- list()
+
+  for (x in rows) {
+    if (length(x$reasons) > 0) {
+      rejected[[length(rejected) + 1]] <- list(row = x$row, reasons = x$reasons)
+      next
+    }
+    obs_index <- length(observations) + 1
+    observations[[obs_index]] <- list(
       survey_uuid       = uuid::UUIDgenerate(),
       project_system_id = sys_id,
       procedure_id      = proc_id,
-      recorded_at       = iso_timestamp[r],
-      lon               = lon_vals[r],
-      lat               = lat_vals[r],
-      values            = row_values
+      recorded_at       = x$timestamp,
+      lon               = x$lon,
+      lat               = x$lat,
+      values            = x$values
     )
-  }
-
-  if (!any(keep)) {
-    stop("No rows could be converted into observations. Check item column mapping and values.")
+    source_ids[obs_index] <- as.character(x$row)
+    for (item_uuid in names(x$media)) {
+      media_uploads[[length(media_uploads) + 1]] <- c(list(obs_index = obs_index, item_uuid = item_uuid), x$media[[item_uuid]])
+    }
   }
 
   unresolved_rows <- data.frame(
@@ -2019,9 +1881,35 @@ build_upload_observations_from_table <- function(data,
   )
 
   list(
-    observations    = unname(observations[keep]),  # must be unnamed so JSON serialises as array not object
-    resolved_rows   = sum(keep),
-    unresolved_rows = unresolved_rows
+    observations    = unname(observations),  # must be unnamed so JSON serialises as array not object
+    source_ids      = source_ids,            # original CSV row number, parallel to observations
+    resolved_rows   = length(observations),
+    unresolved_rows = unresolved_rows,
+    media_uploads   = media_uploads,
+    rejected        = rejected
+  )
+}
+
+
+# Internal: uploads each local file referenced in `media_uploads` via the
+# signed-URL flow, and returns a named character vector mapping basename ->
+# blob_path.
+.upload_pending_media <- function(hdr, media_uploads) {
+  filepaths    <- vapply(media_uploads, function(m) m$filepath, character(1))
+  filenames    <- basename(filepaths)
+
+  media_files <- stats::setNames(
+    lapply(filepaths, function(p) {
+      m <- media_uploads[[match(p, filepaths)]]
+      list(filepath = p, data_type = m$data_type, content_type = m$content_type)
+    }),
+    filenames
+  )
+
+  signed <- upload_field_media_files(hdr, media_files)
+  stats::setNames(
+    vapply(signed, function(s) s$blob_path, character(1)),
+    vapply(signed, function(s) s$filename, character(1))
   )
 }
 
@@ -2029,38 +1917,35 @@ build_upload_observations_from_table <- function(data,
 #' @title Upload Observations From CSV
 #'
 #' @description
-#' One-call workflow to read a CSV file, build observations, and upload to
-#' \code{uploadObservations}. Pass a \code{procedure} list from
-#' \code{get_procedure()} (preferred) or a raw \code{schema} with
-#' \code{system_name}/\code{procedure_name}.
+#' Uploads the result of \link{validate_csv_against_procedure} to
+#' \code{uploadObservations} - mirroring how \link{upload_edna_records} takes
+#' the output of \link{check_edna_labels}. Only rows with \code{status ==
+#' "success"} are sent; nothing is rebuilt and no label is checked against
+#' the database again, since \code{validated} already did that.
 #'
-#' Both long and wide CSV layouts are supported and auto-detected; see
-#' \code{build_upload_observations_from_table()} for details. Pass
-#' \code{format = "long"} or \code{format = "wide"} (via \code{...}) to
-#' override detection. The CSV's timestamp column (default \code{"timestamp"})
-#' must use the strict ISO-8601 UTC format \code{yyyy-mm-ddThh:mm:ssZ}.
+#' If any of those rows reference a local media file (\code{phone-photo}/
+#' \code{phone-video}/\code{phone-audio}), it's uploaded via a signed URL to
+#' cloud storage first, and the resulting \code{blob_path} - not the local
+#' path - is what gets stored on the observation.
 #'
 #' @param hdr A base URL and API key returned by \link{auth_headers} or
-#'   \link{auth_headers_dev}.
-#' @param csv_path Path to CSV containing observation rows.
-#' @param procedure Named list returned by \code{get_procedure()}. Takes
-#'   precedence over \code{schema} when provided.
-#' @param system_name Character system name. Used with \code{schema} only.
-#' @param procedure_name Character procedure name. Used with \code{schema} only.
-#' @param system_index Integer system index. Used with \code{schema} only.
-#' @param procedure_index Integer procedure index. Used with \code{schema} only.
-#' @param dry_run Logical; if \code{TRUE}, returns built observations without
-#'   uploading. Default \code{FALSE}.
-#' @param ... Additional arguments passed to
-#'   \code{build_upload_observations_from_table()}, e.g. \code{format},
-#'   \code{lon_col}, \code{timestamp_col}.
+#'   \link{auth_headers_dev}. Used only for the actual upload calls (media
+#'   signed URLs and \code{uploadObservations} itself).
+#' @param validated The data frame returned by
+#'   \link{validate_csv_against_procedure}.
+#' @param dry_run Logical; if \code{TRUE}, returns the built observations
+#'   without uploading anything (media files are not uploaded either).
+#'   Default \code{FALSE}.
 #'
 #' @return A list with \code{uploaded}, \code{response} (per-observation API
-#'   results), \code{n_success}, \code{n_failed}, the built \code{observations},
-#'   \code{resolved_rows}, and \code{unresolved_rows}. The API validates each
-#'   observation independently in a single request, so one rejected
-#'   observation does not prevent the others from being saved; a final
-#'   success/failure summary is printed once the upload completes.
+#'   results), \code{n_success}, \code{n_failed}, \code{observations} (the
+#'   payloads sent), and \code{result}: \code{validated}'s successful rows
+#'   with \code{api_status}/\code{api_message} columns added (or
+#'   \code{"pending"} on a \code{dry_run}) - the simplest way to see what
+#'   happened to each row. The API validates each observation independently
+#'   in a single request, so one rejected-by-the-API observation does not
+#'   prevent the others from being saved; a final success/failure summary is
+#'   printed once the upload completes.
 #'
 #' @examples
 #' \dontrun{
@@ -2069,73 +1954,82 @@ build_upload_observations_from_table <- function(data,
 #'   procedure <- get_procedure(schema,
 #'     system_name = "Plante Ivindo", procedure_name = "Arbre")
 #'
-#'   result <- upload_observations_from_csv(
-#'     hdr       = hdr,
-#'     csv_path  = "tutorials/example_observation_data.csv",
+#'   validated <- validate_csv_against_procedure(
 #'     procedure = procedure,
-#'     dry_run   = TRUE
+#'     csv_path  = "tutorials/example_observation_data.csv",
+#'     hdr       = hdr
 #'   )
+#'
+#'   result <- upload_observations_from_csv(hdr = hdr, validated = validated)
 #' }
 #'
 #' @author Adam Varley
 #' @export
-upload_observations_from_csv <- function(hdr,
-                                         csv_path,
-                                         procedure = NULL,
-                                         system_name = NULL,
-                                         procedure_name = NULL,
-                                         system_index = NULL,
-                                         procedure_index = NULL,
-                                         dry_run = FALSE,
-                                         ...) {
-  if (missing(csv_path) || is.null(csv_path) || !file.exists(csv_path)) {
-    stop("csv_path must exist")
+upload_observations_from_csv <- function(hdr, validated, dry_run = FALSE) {
+  if (!is.data.frame(validated) || !".payload" %in% names(validated)) {
+    stop("validated must be the data frame returned by validate_csv_against_procedure().")
   }
 
-  observation_data <- read_observation_csv(csv_path)
+  successful <- validated[validated$status == "success", , drop = FALSE]
 
-  # If no procedure list supplied, fall back to fetching schema
-  if (is.null(procedure)) {
-    schema <- get_project_systems(hdr)
-  } else {
-    schema <- NULL
+  if (nrow(successful) == 0) {
+    stop("No successful rows to upload. All rows failed validation.")
   }
 
-  built <- build_upload_observations_from_table(
-    data           = observation_data,
-    procedure      = procedure,
-    schema         = schema,
-    system_name    = system_name,
-    procedure_name = procedure_name,
-    system_index   = system_index,
-    procedure_index = procedure_index,
-    ...
-  )
+  observations <- successful$.payload
+
+  media_uploads <- list()
+  for (i in seq_len(nrow(successful))) {
+    for (m in successful$.media[[i]]) {
+      media_uploads[[length(media_uploads) + 1]] <- c(list(obs_index = i), m)
+    }
+  }
+
+  keep_cols <- setdiff(names(successful), c(".payload", ".media"))
 
   if (isTRUE(dry_run)) {
+    successful$api_status  <- "pending"
+    successful$api_message <- ""
     return(list(
-      uploaded        = FALSE,
-      observations    = built$observations,
-      resolved_rows   = built$resolved_rows,
-      unresolved_rows = built$unresolved_rows
+      uploaded      = FALSE,
+      observations  = observations,
+      resolved_rows = length(observations),
+      result        = successful[, c(keep_cols, "api_status", "api_message"), drop = FALSE]
     ))
   }
 
-  n_obs <- length(built$observations)
-  cli::cli_progress_step(
-    "Uploading {n_obs} observation{?s} to NatureCube...",
-    spinner = TRUE,
+  if (length(media_uploads) > 0) {
+    n_media <- length(media_uploads)
+    cli::cli_progress_bar(
+      "Uploading {cli::pb_current}/{cli::pb_total} media files to cloud storage | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+      total = n_media,
+      .auto_close = FALSE
+    )
+    # on.exit (not tryCatch) so the spinner always closes - including on a
+    # user interrupt (e.g. Escape/Ctrl+C), which tryCatch's `error` handler
+    # does not catch and would otherwise leave it animating indefinitely.
+    media_step_ok <- FALSE
+    on.exit(cli::cli_progress_done(result = if (media_step_ok) "done" else "failed"), add = TRUE)
+
+    blob_by_filename <- .upload_pending_media(hdr, media_uploads)
+    media_step_ok <- TRUE
+
+    for (m in media_uploads) {
+      observations[[m$obs_index]]$values[[m$item_uuid]] <- unname(blob_by_filename[basename(m$filepath)])
+    }
+  }
+
+  n_obs <- length(observations)
+  cli::cli_progress_bar(
+    "Uploading {cli::pb_current}/{cli::pb_total} observations to NatureCube | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total = n_obs,
     .auto_close = FALSE
   )
+  upload_step_ok <- FALSE
+  on.exit(cli::cli_progress_done(result = if (upload_step_ok) "done" else "failed"), add = TRUE)
 
-  response <- tryCatch(
-    upload_observations(hdr = hdr, observations = built$observations),
-    error = function(e) {
-      cli::cli_progress_done(result = "failed")
-      stop(e)
-    }
-  )
-  cli::cli_progress_done()
+  response <- upload_observations(hdr = hdr, observations = observations)
+  upload_step_ok <- TRUE
 
   n_success <- sum(vapply(response, function(x) identical(x$status, "success"), logical(1)))
   n_failed  <- length(response) - n_success
@@ -2146,18 +2040,23 @@ upload_observations_from_csv <- function(hdr,
       cli::cli_alert_warning("  [{e$survey_uuid %||% 'unknown'}] {e$message %||% 'no message'}")
     }
   } else {
-    cli::cli_alert_success("Upload complete: all {n_success} observation{?s} succeeded.")
+    cli::cli_alert_success("Upload complete: all {n_success} observations succeeded.")
   }
 
-  return(list(
-    uploaded        = TRUE,
-    response        = response,
-    n_success       = n_success,
-    n_failed        = n_failed,
-    observations    = built$observations,
-    resolved_rows   = built$resolved_rows,
-    unresolved_rows = built$unresolved_rows
-  ))
+  # response is parallel to `observations`/`successful` (one row = one
+  # observation), so results map back positionally.
+  successful$api_status  <- vapply(response, function(x) as.character(x$status %||% "unknown"), character(1))
+  successful$api_message <- vapply(response, function(x) as.character(x$message %||% ""), character(1))
+
+  list(
+    uploaded      = TRUE,
+    response      = response,
+    n_success     = n_success,
+    n_failed      = n_failed,
+    observations  = observations,
+    resolved_rows = length(observations),
+    result        = successful[, c(keep_cols, "api_status", "api_message"), drop = FALSE]
+  )
 }
 
 
@@ -2174,7 +2073,6 @@ upload_observations_from_csv <- function(hdr,
 #' instead, errors are collected and returned in the summary.
 #'
 #' @param hdr A base URL and API key returned by \link{auth_headers} or \link{auth_headers_dev}.
-#' @param project_id Integer. The ID of the project to upload observations to.
 #' @param feature_payload List. A list of feature records created with \code{build_feature_record()}.
 #' @param device_settings List. Device settings created with \code{build_device_settings()}.
 #' @param media_dir Character or NULL. Path to the directory containing media files.
@@ -2226,7 +2124,6 @@ upload_observations_from_csv <- function(hdr,
 #'   # Upload
 #'   result <- upload_phone_observations(
 #'     hdr = hdr,
-#'     project_id = 42,
 #'     feature_payload = list(feature1),
 #'     device_settings = device
 #'   )
@@ -2237,7 +2134,6 @@ upload_observations_from_csv <- function(hdr,
 #' @author Adam Varley
 #' @export
 upload_phone_observations <- function(hdr,
-                                        project_id,
                                         feature_payload,
                                         device_settings,
                                         media_dir = NULL,
@@ -2280,7 +2176,7 @@ for (i in seq_along(feature_payload)) {
       media_files <- collect_media_files(feature$observations, media_dir)
       if (length(media_files) > 0) {
         message("  Uploading ", length(media_files), " media file(s) via signed URLs...")
-        upload_field_media_files(hdr, project_id, media_files)
+        upload_field_media_files(hdr, media_files)
       }
     }
 
@@ -2289,8 +2185,7 @@ for (i in seq_along(feature_payload)) {
     urlreq <- httr2::req_url_path_append(
       hdr$root,
       "pushPhoneObservations",
-      hdr$key,
-      as.character(project_id)
+      hdr$key
     )
     urlreq <- urlreq |>
       httr2::req_method("POST") |>

@@ -63,9 +63,12 @@ add_project_labels <- function(hdr,
   return(resp)
 }
 
-# Utility function to replace NULLs with NAs in a data frame
+# Utility function to replace NULLs and empty (zero-length) fields - e.g. an
+# empty JSON array like `tags: []` parsed to list() - with NA. A zero-length
+# field left as-is makes tibble::as_tibble() recycle every column down to 0
+# rows, silently dropping the record.
 replace_nas <- function(df) {
-  df[sapply(df, function(x) is.null(x))] <- NA
+  df[sapply(df, function(x) is.null(x) || length(x) == 0)] <- NA
   return(df)
 }
 
@@ -98,7 +101,11 @@ getIUCNLabels <- function(hdr, offset, search_term = NULL) {
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "getIUCNLabels", hdr$key)
   urlreq_ap <- urlreq_ap |>
     httr2::req_method("GET") |>
-    httr2::req_url_query("offset" = offset, "limit" = limit, "search_term" = search_term)
+    httr2::req_url_query("offset" = offset, "limit" = limit, "search_term" = search_term) |>
+    httr2::req_retry(
+      max_tries = 5,
+      is_transient = \(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
+    )
 
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_json(preq)

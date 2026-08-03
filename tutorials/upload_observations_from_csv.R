@@ -1,11 +1,11 @@
 # Tutorial: Upload observations from CSV with automatic schema mapping
 #
 # This script demonstrates the low-friction workflow:
-# 1) Read CSV rows of observations
+# 1) Read a wide-format CSV (one row per feature, procedure item names as
+#    column headers)
 # 2) Fetch project schema once
-# 3) Resolve item UUIDs from item names
-# 4) Build observations for uploadObservations
-# 5) Dry-run or upload
+# 3) Validate against the procedure (checks labels against the database)
+# 4) Upload the validated result
 
 if (!requireNamespace("devtools", quietly = TRUE)) {
   stop("Package 'devtools' is required for local testing. Install with install.packages('devtools').")
@@ -48,35 +48,40 @@ procedure <- get_procedure(project_systems,
 
 csv_path <- file.path(repo_root, "tutorials", "data", "example_observation_data.csv")
 
+# Read the CSV yourself - validate_csv_against_procedure() takes a data
+# frame, not a path, so you're free to filter/mutate it first if needed.
+observation_data <- readr::read_csv(csv_path, show_col_types = FALSE)
+
 # ----------------------------------------------------------------------------
 # 3. Validate the CSV against the procedure
 # ----------------------------------------------------------------------------
 
-# Checks for missing required columns and other common issues before upload.
-validate_csv_against_procedure(
-  procedure = procedure,
-  csv_path  = csv_path
+# Checks for missing required columns, bad values, and unrecognised labels
+# before upload. Every label value is checked against the label database
+# here - reuse this result in step 4 instead of validating twice.
+validated <- validate_csv_against_procedure(
+  procedure        = procedure,
+  observation_data = observation_data,
+  hdr              = hdr
 )
 
 # ----------------------------------------------------------------------------
-# 4. Dry run (recommended first)
+# 4. Upload the validated result
 # ----------------------------------------------------------------------------
 
 # This will:
-# - fetch schema once
-# - resolve system/procedure from names
-# - map item_name -> item_uuid where item_uuid is missing
-# - build observations grouped by observation_id or lon/lat/time
-# - return a payload preview without uploading
-# - Currently the user can upload simple observations with item_name and value, but not complex observations with nested sub-observations. Support for this is coming soon. 
-# - Also this only supports simple point data. Not polygons or lines. Support for this is also coming soon.
+# - reuse the observations/labels already built and checked in step 3
+#   (nothing is rebuilt and no label is checked against the database again)
+# - upload only the rows that passed validation
+# - Currently only simple point observations are supported - one row per
+#   feature, no nested sub-observations, no polygons or lines.
 
-dry_run_result <- upload_observations_from_csv(
+upload_result <- upload_observations_from_csv(
   hdr       = hdr,
-  csv_path  = csv_path,
-  procedure = procedure,
-  dry_run   = FALSE
+  validated = validated
 )
+
+upload_result$result
 
 
 
