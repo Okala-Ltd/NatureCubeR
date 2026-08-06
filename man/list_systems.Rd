@@ -10,9 +10,9 @@ list_systems(schema)
 \item{schema}{List. Project schema returned by \code{get_project_systems()}.}
 }
 \value{
-A data frame (invisibly) with columns \code{system_index},
+A tibble (invisibly) with columns \code{system_index},
   \code{system_name}, \code{system_id}, \code{procedure_index},
-  \code{procedure_name}, and \code{procedure_id}. The data frame is also
+  \code{procedure_name}, and \code{procedure_id}. The tibble is also
   printed to the console.
 }
 \description{

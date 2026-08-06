@@ -6,12 +6,8 @@
 \usage{
 validate_csv_against_procedure(
   procedure,
-  csv_path,
+  observation_data,
   hdr,
-  format = "auto",
-  item_name_col = "item_name",
-  value_col = "data",
-  numeric_value_col = "numbers",
   lon_col = "longitude",
   lat_col = "latitude",
   timestamp_col = "timestamp"
@@ -20,24 +16,13 @@ validate_csv_against_procedure(
 \arguments{
 \item{procedure}{Named list returned by \code{get_procedure()}.}
 
-\item{csv_path}{Path to the CSV file to validate.}
+\item{observation_data}{Data frame of observation rows - one row per
+feature, with procedure item names as column headers.}
 
 \item{hdr}{A base URL and API key returned by \link{auth_headers} or
 \link{auth_headers_dev}. Required (not optional): it is used to check
 any \code{label} data_type values against the label database via
 \link{getIUCNLabels}, and this check cannot be silently skipped.}
-
-\item{format}{One of \code{"auto"} (default), \code{"long"}, or
-\code{"wide"}.}
-
-\item{item_name_col}{Column holding item names (long format only).
-Default \code{"item_name"}.}
-
-\item{value_col}{Column holding text values (long format only).
-Default \code{"data"}.}
-
-\item{numeric_value_col}{Column holding numeric values (long format
-only). Default \code{"numbers"}.}
 
 \item{lon_col}{Longitude column. Default \code{"longitude"}.}
 
@@ -46,8 +31,7 @@ only). Default \code{"numbers"}.}
 \item{timestamp_col}{Timestamp column. Default \code{"timestamp"}.}
 }
 \value{
-(Invisibly) the original CSV as a data frame, with two columns
-  added:
+(Invisibly) \code{observation_data} as a tibble, with two columns added:
   \describe{
     \item{status}{\code{"success"} or \code{"rejected"} for that row/observation.}
     \item{message}{Why it was rejected (blank on success) - bad timestamp,
@@ -61,27 +45,16 @@ only). Default \code{"numbers"}.}
   rebuilding and no re-checking any labels.
 }
 \description{
-Checks an observation CSV against a procedure object returned by
-\code{get_procedure()}, and mandatorily validates every row/observation
-the same way \code{upload_observations_from_csv()} would build it -
-including checking any \code{label} data_type value against the label
-database. Two CSV layouts are supported and auto-detected:
+Checks a wide-format observation table (one row per feature; procedure
+item names spread as column headers) against a procedure object returned
+by \code{get_procedure()}, and mandatorily validates every row the same
+way \code{upload_observations_from_csv()} would build it - including
+checking any \code{label} data_type value against the label database.
 
-\strong{Long format} -- one row per observation item. Has an
-\code{item_name} column and a \code{data} column. Rows sharing the
-same lat/lon/timestamp (or \code{observation_id}) become one observation.
+The table must have one column per procedure item (matched by name),
+plus \code{longitude}, \code{latitude}, and \code{timestamp} columns.
 
-\strong{Wide format} -- one row per feature. Procedure item names are
-spread as column headers; each row contains all item values for one
-feature. Must still have \code{longitude}, \code{latitude}, and
-\code{timestamp} columns.
-
-The format is detected automatically: if the CSV contains a column
-matching \code{item_name_col} it is treated as long format, otherwise
-wide format is assumed. Override with \code{format = "long"} or
-\code{format = "wide"}.
-
-If the procedure has a \code{label} data_type item, the CSV should carry
+If the procedure has a \code{label} data_type item, the table should carry
 taxonomic rank columns - \code{species}, \code{genus}, \code{family},
 \code{order}, \code{class}, \code{phylum}, \code{kingdom} - looked up by
 those fixed names, not by matching the label item's own item_name. Not
@@ -107,13 +80,9 @@ status-gated pattern.
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
 
-  # Long format
-  validate_csv_against_procedure(procedure,
-    csv_path = "tutorials/example_observation_data.csv", hdr = hdr)
-
-  # Wide format (auto-detected or explicit)
-  validate_csv_against_procedure(procedure,
-    csv_path = "tutorials/example_wide.csv", hdr = hdr, format = "wide")
+  observation_data <- readr::read_csv("tutorials/example_wide.csv")
+  validated <- validate_csv_against_procedure(procedure,
+    observation_data = observation_data, hdr = hdr)
 }
 
 }

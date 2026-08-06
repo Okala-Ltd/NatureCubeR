@@ -35,7 +35,7 @@ A named list (invisibly) with elements:
     \item{system_name}{Character system name.}
     \item{procedure_name}{Character procedure name.}
     \item{form}{Logical; whether the procedure is a form.}
-    \item{items}{Data frame with one row per item: \code{item_id}, \code{item_uuid},
+    \item{items}{Tibble with one row per item: \code{item_id}, \code{item_uuid},
       \code{item_name}, \code{item_description}, \code{data_type}, \code{nullable},
       \code{choices}.}
   }
@@ -45,8 +45,7 @@ A named list (invisibly) with elements:
 Returns a detailed table of all items (fields) in a selected procedure,
 including item names, UUIDs, types, and valid choices where applicable.
 Use this to understand exactly what data to submit and how to structure it
-before calling \code{build_upload_observation()} or
-\code{upload_observations_from_csv()}.
+before calling \code{upload_observations_from_csv()}.
 }
 \examples{
 \dontrun{

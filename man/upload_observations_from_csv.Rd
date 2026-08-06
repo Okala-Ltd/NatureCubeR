@@ -11,7 +11,7 @@ upload_observations_from_csv(hdr, validated, dry_run = FALSE)
 \link{auth_headers_dev}. Used only for the actual upload calls (media
 signed URLs and \code{uploadObservations} itself).}
 
-\item{validated}{The data frame returned by
+\item{validated}{The tibble returned by
 \link{validate_csv_against_procedure}.}
 
 \item{dry_run}{Logical; if \code{TRUE}, returns the built observations
@@ -48,10 +48,11 @@ path - is what gets stored on the observation.
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
 
+  observation_data <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
   validated <- validate_csv_against_procedure(
-    procedure = procedure,
-    csv_path  = "tutorials/example_observation_data.csv",
-    hdr       = hdr
+    procedure        = procedure,
+    observation_data = observation_data,
+    hdr              = hdr
   )
 
   result <- upload_observations_from_csv(hdr = hdr, validated = validated)

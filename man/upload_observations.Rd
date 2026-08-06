@@ -4,16 +4,16 @@
 \alias{upload_observations}
 \title{Upload Observations}
 \usage{
-upload_observations(hdr, observations, dry_run_payload = FALSE)
+upload_observations(hdr, observations, dry_run = FALSE)
 }
 \arguments{
 \item{hdr}{A base URL and API key returned by \link{auth_headers} or
 \link{auth_headers_dev}.}
 
-\item{observations}{List of observations created with
-\code{build_upload_observation()}.}
+\item{observations}{List of observations, keyed by item UUID, such as
+those built by \code{build_upload_observations_from_table()}.}
 
-\item{dry_run_payload}{Logical. If \code{TRUE}, returns the request payload
+\item{dry_run}{Logical. If \code{TRUE}, returns the request payload
 without sending it to the API. Default \code{FALSE}.}
 }
 \value{
@@ -24,16 +24,12 @@ Uploads one or more observations to the `uploadObservations` endpoint.
 }
 \examples{
 \dontrun{
-  hdr <- auth_headers("your_api_key")
-  schema <- get_project_systems(hdr)
-  obs <- build_upload_observation(
-    schema = schema,
-    values = list("item-uuid-here" = "Roe Deer"),
-    recorded_at = "2024-06-01T09:00:00Z",
-    lon = -1.543,
-    lat = 51.761
-  )
-  resp <- upload_observations(hdr, list(obs))
+  hdr       <- auth_headers("your_api_key")
+  schema    <- get_project_systems(hdr)
+  procedure <- get_procedure(schema,
+    system_name = "Plante Ivindo", procedure_name = "Arbre")
+  built <- build_upload_observations_from_table(df, procedure = procedure)
+  resp  <- upload_observations(hdr, built$observations)
 }
 
 }

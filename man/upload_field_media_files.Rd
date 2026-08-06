@@ -9,7 +9,7 @@ upload_field_media_files(hdr, media_files)
 \arguments{
 \item{hdr}{Auth headers from \link{auth_headers}.}
 
-\item{media_files}{Named list from \link{collect_media_files}.}
+\item{media_files}{Named list from \code{.upload_pending_media()}.}
 }
 \value{
 Invisibly, the list of presign response entries.

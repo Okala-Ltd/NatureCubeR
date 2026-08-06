@@ -1,359 +1,20 @@
-#' @title Valid Phone Observation Types
-#'
-#' @description
-#' Character vector of valid item types for phone observations.
-#'
-#' @keywords internal
-phone_types <- c(
-
-"phone-photo",
-"phone-video",
-"phone-audio",
-"choice",
-"text",
-"numeric",
-"label",
-"instruction"
-)
-
 # Internal null-coalescing helper.
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
 }
 
-#' @title Build Device Settings
-#'
-#' @description
-#' Constructs a validated device settings list matching the DeviceSettings schema
-#' required by the NatureCube API.
-#'
-#' @param device_id Character. Unique identifier for the device.
-#' @param phone_model Character. Model name of the phone (e.g., "iPhone 14 Pro").
-#' @param phone_os Character. Operating system of the phone (e.g., "iOS 17.2").
-#' @param carrier Character. Network carrier (e.g., "Vodafone").
-#' @param build_number Character. App build number.
-#' @param build_id Character. App build identifier.
-#' @param battery_level Numeric. Battery level percentage (0-100). Default is 100.
-#' @param device_last_used POSIXct or NULL. Timestamp of last device use. Default is current time.
-#'
-#' @return A named list with device settings ready for API submission.
-#'
-#' @examples
-#' \dontrun{
-#'   device <- build_device_settings(
-#'     device_id = "abc123-unique-id",
-#'     phone_model = "iPhone 14 Pro",
-#'     phone_os = "iOS 17.2",
-#'     carrier = "Vodafone",
-#'     build_number = "1.2.3",
-#'     build_id = "build-456"
-#'   )
-#' }
-#'
-#' @author Adam Varley
-#' @export
-build_device_settings <- function(device_id,
-                                   phone_model,
-                                   phone_os,
-                                   carrier,
-                                   build_number,
-                                   build_id,
-                                   battery_level = 100,
-                                   device_last_used = NULL) {
-
-# Validate required fields
-if (missing(device_id) || is.null(device_id) || device_id == "") {
-  stop("device_id is required")
-}
-if (missing(phone_model) || is.null(phone_model) || phone_model == "") {
-  stop("phone_model is required")
-}
-if (missing(phone_os) || is.null(phone_os) || phone_os == "") {
-  stop("phone_os is required")
-}
-if (missing(carrier) || is.null(carrier) || carrier == "") {
- stop("carrier is required")
-}
-if (missing(build_number) || is.null(build_number) || build_number == "") {
-  stop("build_number is required")
-}
-if (missing(build_id) || is.null(build_id) || build_id == "") {
-  stop("build_id is required")
-}
-
-# Validate battery level
-if (!is.numeric(battery_level) || battery_level < 0 || battery_level > 100) {
-  stop("battery_level must be a number between 0 and 100")
-}
-
-# Set default for device_last_used
-if (is.null(device_last_used)) {
-  device_last_used <- Sys.time()
-}
-
-# Build the device settings list
-device_settings <- list(
-  device_id = as.character(device_id),
-  phone_model = as.character(phone_model),
-  phone_operating_system = as.character(phone_os),
-  carrier = as.character(carrier),
-  build_number = as.character(build_number),
-  build_id = as.character(build_id),
-  battery_level = as.numeric(battery_level),
-  device_created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
-  device_last_used = format(device_last_used, "%Y-%m-%dT%H:%M:%SZ")
-)
-
-return(device_settings)
-}
-
-
-#' @title Build Observation
-#'
-#' @description
-#' Creates a single observation record (NestedObservationRecord) for inclusion
-#' in a feature record.
-#'
-#' @param item_uuid Character. UUID of the item/field this observation is for.
-#' @param item_type Character. Type of observation. Must be one of: "phone-photo",
-#'   "phone-video", "phone-audio", "choice", "text", "numeric", "label", "instruction".
-#' @param data List or vector. The observation data. For media types, this should be
-#'   a character vector of filenames. For other types, the appropriate data values.
-#' @param geometry List. GeoJSON geometry object (Point, Polygon, or LineString).
-#' @param observation_uuid Character or NULL. UUID for this observation. If NULL,
-#'   a new UUID will be generated.
-#' @param observation_created_at POSIXct or NULL. Timestamp when observation was created.
-#'   If NULL, current time is used.
-#'
-#' @return A named list representing a NestedObservationRecord.
-#'
-#' @examples
-#' \dontrun{
-#'   obs <- build_observation(
-#'     item_uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-#'     item_type = "phone-photo",
-#'     data = c("photo1.jpg", "photo2.jpg"),
-#'     geometry = list(type = "Point", coordinates = c(-1.5, 53.4))
-#'   )
-#' }
-#'
-#' @author Adam Varley
-#' @export
-build_observation <- function(item_uuid,
-                               item_type,
-                               data,
-                               geometry,
-                               observation_uuid = NULL,
-                               observation_created_at = NULL) {
-
-# Validate item_type
-if (!item_type %in% phone_types) {
-  stop("item_type must be one of: ", paste(phone_types, collapse = ", "))
-}
-
-# Validate item_uuid
-if (missing(item_uuid) || is.null(item_uuid) || item_uuid == "") {
-  stop("item_uuid is required")
-}
-
-# Validate geometry
-if (missing(geometry) || is.null(geometry)) {
-  stop("geometry is required")
-}
-if (!is.list(geometry) || !"type" %in% names(geometry)) {
-  stop("geometry must be a GeoJSON object with 'type' property")
-}
-valid_geom_types <- c("Point", "Polygon", "LineString")
-if (!geometry$type %in% valid_geom_types) {
-  stop("geometry type must be one of: ", paste(valid_geom_types, collapse = ", "))
-}
-
-# Generate UUID if not provided
-if (is.null(observation_uuid)) {
-  observation_uuid <- uuid::UUIDgenerate()
-}
-
-# Set timestamp if not provided
-if (is.null(observation_created_at)) {
-  observation_created_at <- Sys.time()
-}
-
-# Build the observation properties
-properties <- list(
-  item_uuid = as.character(item_uuid),
-  item_type = as.character(item_type),
-  observation_uuid = as.character(observation_uuid),
-  observation_created_at = format(observation_created_at, "%Y-%m-%dT%H:%M:%SZ"),
-  data = as.list(data)
-)
-
-# Build the full observation record (GeoJSON Feature structure)
-observation <- list(
-  type = "Feature",
-  geometry = geometry,
-  properties = properties
-)
-
-return(observation)
-}
-
-
-#' @title Build Feature Record
-#'
-#' @description
-#' Constructs a feature record (FieldRecord) containing a geometry and its
-#' associated observations.
-#'
-#' @param feature_uuid Character. UUID for this feature record.
-#' @param project_system_id Integer. ID of the project system.
-#' @param procedure_id Integer. ID of the procedure being followed.
-#' @param start_time POSIXct. Timestamp when the procedure started.
-#' @param end_time POSIXct. Timestamp when the procedure ended.
-#' @param created_by_method Character. How the feature was created: "drawn" or "traced".
-#' @param geometry List. GeoJSON geometry object (Point, Polygon, or LineString).
-#' @param observations List. List of observation records created with \code{build_observation()}.
-#'
-#' @return A named list representing a FieldRecord ready for API submission.
-#'
-#' @examples
-#' \dontrun{
-#'   obs1 <- build_observation(
-#'     item_uuid = "abc-123",
-#'     item_type = "text",
-#'     data = list("Sample observation"),
-#'     geometry = list(type = "Point", coordinates = c(-1.5, 53.4))
-#'   )
-#'
-#'   feature <- build_feature_record(
-#'     feature_uuid = "feature-uuid-123",
-#'     project_system_id = 42,
-#'     procedure_id = 7,
-#'     start_time = Sys.time() - 3600,
-#'     end_time = Sys.time(),
-#'     created_by_method = "drawn",
-#'     geometry = list(
-#'       type = "Polygon",
-#'       coordinates = list(list(c(0,0), c(1,0), c(1,1), c(0,1), c(0,0)))
-#'     ),
-#'     observations = list(obs1)
-#'   )
-#' }
-#'
-#' @author Adam Varley
-#' @export
-build_feature_record <- function(feature_uuid,
-                                  project_system_id,
-                                  procedure_id,
-                                  start_time,
-                                  end_time,
-                                  created_by_method,
-                                  geometry,
-                                  observations) {
-
-# Validate required fields
-if (missing(feature_uuid) || is.null(feature_uuid) || feature_uuid == "") {
-  stop("feature_uuid is required")
-}
-if (missing(project_system_id) || is.null(project_system_id)) {
-  stop("project_system_id is required")
-}
-if (missing(procedure_id) || is.null(procedure_id)) {
-  stop("procedure_id is required")
-}
-if (missing(start_time) || is.null(start_time)) {
-  stop("start_time is required")
-}
-if (missing(end_time) || is.null(end_time)) {
-  stop("end_time is required")
-}
-if (missing(created_by_method) || is.null(created_by_method)) {
-  stop("created_by_method is required")
-}
-if (!created_by_method %in% c("drawn", "traced")) {
-  stop("created_by_method must be 'drawn' or 'traced'")
-}
-if (missing(geometry) || is.null(geometry)) {
-  stop("geometry is required")
-}
-if (missing(observations) || is.null(observations)) {
-  stop("observations is required")
-}
-
-# Validate geometry
-if (!is.list(geometry) || !"type" %in% names(geometry)) {
-  stop("geometry must be a GeoJSON object with 'type' property")
-}
-valid_geom_types <- c("Point", "Polygon", "LineString")
-if (!geometry$type %in% valid_geom_types) {
-  stop("geometry type must be one of: ", paste(valid_geom_types, collapse = ", "))
-}
-
-# Build the feature record
-feature_record <- list(
-  feature_uuid = as.character(feature_uuid),
-  project_system_id = as.integer(project_system_id),
-  procedure_id = as.integer(procedure_id),
-  procedure_start_timestamp = format(start_time, "%Y-%m-%dT%H:%M:%SZ"),
-  procedure_end_timestamp = format(end_time, "%Y-%m-%dT%H:%M:%SZ"),
-  created_by_method = as.character(created_by_method),
-  geometry = geometry,
-  observations = observations
-)
-
-return(feature_record)
-}
-
-
-#' @title Collect Media Files from Observations
-#'
-#' @description
-#' Extracts media filenames and local paths from observations with media types,
-#' for use with the signed-URL upload flow.
-#'
-#' @param observations List. List of observation records.
-#' @param media_dir Character. Path to the directory containing media files.
-#'
-#' @return A named list keyed by filename. Each element is a list with
-#'   \code{filepath}, \code{data_type}, and \code{content_type}.
-#'   Returns an empty list if no media files are found.
-#'
-#' @keywords internal
-collect_media_files <- function(observations, media_dir) {
-
-media_types <- c("phone-photo", "phone-video", "phone-audio")
-media_files <- list()
-
-for (obs in observations) {
-  item_type <- obs$properties$item_type
-
-  if (item_type %in% media_types) {
-    # Get the filenames from data
-    filenames <- obs$properties$data
-
-    for (filename in filenames) {
-      filepath <- file.path(media_dir, filename)
-
-      if (file.exists(filepath)) {
-        content_type <- switch(
-          item_type,
-          "phone-photo" = "image/jpeg",
-          "phone-video" = "video/mp4",
-          "phone-audio" = "audio/mpeg"
-        )
-
-        media_files[[filename]] <- list(
-          filepath = filepath,
-          data_type = item_type,
-          content_type = content_type
-        )
-      }
-    }
+# Internal: performs an httr2 request; on a >=400 response, stops with the
+# status and response body so the API's own error message is visible instead
+# of a generic httr2 error.
+.perform_or_stop <- function(req) {
+  resp   <- httr2::req_perform(req |> httr2::req_error(is_error = \(r) FALSE))
+  status <- httr2::resp_status(resp)
+  if (status >= 400) {
+    body <- tryCatch(httr2::resp_body_string(resp), error = function(e) "<no response body>")
+    stop(sprintf("HTTP %d from %s\n%s", status, resp$url, body), call. = FALSE)
   }
+  resp
 }
-
-return(media_files)
-}
-
 
 #' @title Request signed URLs for field media upload
 #'
@@ -406,7 +67,7 @@ get_field_media_upload_urls <- function(hdr, files) {
 #' Presigns upload URLs then PUTs each local file directly to cloud storage.
 #'
 #' @param hdr Auth headers from \link{auth_headers}.
-#' @param media_files Named list from \link{collect_media_files}.
+#' @param media_files Named list from \code{.upload_pending_media()}.
 #'
 #' @return Invisibly, the list of presign response entries.
 #'
@@ -460,135 +121,6 @@ upload_field_media_files <- function(hdr, media_files) {
 }
 
 
-#' @title Validate Observation Payload
-#'
-#' @description
-#' Validates the device settings and feature payload before submission to the API.
-#' Checks for required fields, valid item types, and verifies media files exist.
-#'
-#' @param feature_payload List. List of feature records created with \code{build_feature_record()}.
-#' @param device_settings List. Device settings created with \code{build_device_settings()}.
-#' @param media_dir Character or NULL. Path to directory containing media files.
-#'   Required if any observations have media types.
-#'
-#' @return A list with \code{$valid} (logical) and \code{$errors} (character vector).
-#'
-#' @examples
-#' \dontrun{
-#'   validation <- validate_observation_payload(
-#'     feature_payload = my_features,
-#'     device_settings = my_device,
-#'     media_dir = "/path/to/media"
-#'   )
-#'
-#'   if (!validation$valid) {
-#'     stop(paste(validation$errors, collapse = "\n"))
-#'   }
-#' }
-#'
-#' @author Adam Varley
-#' @export
-validate_observation_payload <- function(feature_payload, device_settings, media_dir = NULL) {
-
-errors <- character()
-media_types <- c("phone-photo", "phone-video", "phone-audio")
-
-# Validate device_settings required fields
-device_required <- c("device_id", "phone_model", "phone_operating_system",
-                     "carrier", "build_number", "build_id")
-missing_device <- setdiff(device_required, names(device_settings))
-if (length(missing_device) > 0) {
-  errors <- c(errors, paste("Missing device settings fields:",
-                            paste(missing_device, collapse = ", ")))
-}
-
-# Validate feature_payload is a list
-if (!is.list(feature_payload) || length(feature_payload) == 0) {
-  errors <- c(errors, "feature_payload must be a non-empty list of feature records")
-  return(list(valid = FALSE, errors = errors))
-}
-
-# Validate each feature
-for (i in seq_along(feature_payload)) {
-  feature <- feature_payload[[i]]
-  feature_id <- feature$feature_uuid %||% paste("Feature", i)
-
-  # Check required feature fields
-  feature_required <- c("feature_uuid", "project_system_id", "procedure_id",
-                        "procedure_start_timestamp", "procedure_end_timestamp",
-                        "created_by_method", "geometry", "observations")
-  missing_feature <- setdiff(feature_required, names(feature))
-  if (length(missing_feature) > 0) {
-    errors <- c(errors, paste0("[", feature_id, "] Missing fields: ",
-                               paste(missing_feature, collapse = ", ")))
-  }
-
-  # Validate created_by_method
-  if (!is.null(feature$created_by_method) &&
-      !feature$created_by_method %in% c("drawn", "traced")) {
-    errors <- c(errors, paste0("[", feature_id, "] created_by_method must be 'drawn' or 'traced'"))
-  }
-
-  # Validate geometry
-  if (!is.null(feature$geometry)) {
-    if (!is.list(feature$geometry) || !"type" %in% names(feature$geometry)) {
-      errors <- c(errors, paste0("[", feature_id, "] geometry must be a valid GeoJSON object"))
-    } else if (!feature$geometry$type %in% c("Point", "Polygon", "LineString")) {
-      errors <- c(errors, paste0("[", feature_id, "] geometry type must be Point, Polygon, or LineString"))
-    }
-  }
-
-  # Validate observations
-  if (!is.null(feature$observations) && is.list(feature$observations)) {
-    for (j in seq_along(feature$observations)) {
-      obs <- feature$observations[[j]]
-      obs_id <- obs$properties$observation_uuid %||% paste("Observation", j)
-
-      # Check item_type
-      item_type <- obs$properties$item_type
-      if (is.null(item_type)) {
-        errors <- c(errors, paste0("[", feature_id, "/", obs_id, "] item_type is required"))
-      } else if (!item_type %in% phone_types) {
-        errors <- c(errors, paste0("[", feature_id, "/", obs_id, "] Invalid item_type '",
-                                   item_type, "'. Must be one of: ",
-                                   paste(phone_types, collapse = ", ")))
-      }
-
-      # Validate observation geometry
-      if (!is.null(obs$geometry)) {
-        if (!is.list(obs$geometry) || !"type" %in% names(obs$geometry)) {
-          errors <- c(errors, paste0("[", feature_id, "/", obs_id,
-                                     "] observation geometry must be a valid GeoJSON object"))
-        }
-      }
-
-      # Check media files exist
-      if (!is.null(item_type) && item_type %in% media_types) {
-        if (is.null(media_dir)) {
-          errors <- c(errors, paste0("[", feature_id, "/", obs_id,
-                                     "] media_dir is required for media type observations"))
-        } else {
-          filenames <- obs$properties$data
-          for (filename in filenames) {
-            filepath <- file.path(media_dir, filename)
-            if (!file.exists(filepath)) {
-              errors <- c(errors, paste0("[", feature_id, "/", obs_id,
-                                         "] Media file not found: ", filepath))
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-return(list(
-  valid = length(errors) == 0,
-  errors = errors
-))
-}
-
-
 #' @title Get Project Schema
 #'
 #' @description
@@ -610,22 +142,7 @@ return(list(
 #' @export
 get_project_systems <- function(hdr) {
   urlreq <- httr2::req_url_path_append(hdr$root, "getProjectSchema", hdr$key)
-  response <- tryCatch(
-    httr2::req_perform(urlreq),
-    error = function(e) {
-      req_url <- urlreq$url
-      stop(
-        paste0(
-          "Failed to fetch project schema from ", req_url, ". ",
-          "If you are running locally, confirm the endpoint exists: ",
-          "GET /api/getProjectSchema/{api_key}. Original error: ",
-          conditionMessage(e)
-        ),
-        call. = FALSE
-      )
-    }
-  )
-  return(httr2::resp_body_json(response))
+  httr2::resp_body_json(.perform_or_stop(urlreq))
 }
 
 
@@ -638,9 +155,9 @@ get_project_systems <- function(hdr) {
 #'
 #' @param schema List. Project schema returned by \code{get_project_systems()}.
 #'
-#' @return A data frame (invisibly) with columns \code{system_index},
+#' @return A tibble (invisibly) with columns \code{system_index},
 #'   \code{system_name}, \code{system_id}, \code{procedure_index},
-#'   \code{procedure_name}, and \code{procedure_id}. The data frame is also
+#'   \code{procedure_name}, and \code{procedure_id}. The tibble is also
 #'   printed to the console.
 #'
 #' @examples
@@ -655,50 +172,35 @@ get_project_systems <- function(hdr) {
 list_systems <- function(schema) {
   if (is.null(schema$systems) || length(schema$systems) == 0) {
     message("No systems found in schema.")
-    return(invisible(data.frame()))
+    return(invisible(tibble::tibble()))
   }
 
-  rows <- list()
-  for (si in seq_along(schema$systems)) {
+  rows <- lapply(seq_along(schema$systems), function(si) {
     sys      <- schema$systems[[si]]
     sys_name <- as.character(sys$system_name %||% "")
     sys_id   <- if (!is.null(sys$project_system_id)) as.integer(sys$project_system_id) else NA_integer_
+    procs    <- sys$procedures
 
-    if (is.null(sys$procedures) || length(sys$procedures) == 0) {
-      rows[[length(rows) + 1]] <- data.frame(
-        system_index    = si,
-        system_name     = sys_name,
-        system_id       = sys_id,
-        procedure_index = NA_integer_,
-        procedure_name  = NA_character_,
-        procedure_id    = NA_integer_,
-        form            = NA,
-        stringsAsFactors = FALSE
-      )
-      next
+    if (length(procs) == 0) {
+      return(tibble::tibble(
+        system_index = si, system_name = sys_name, system_id = sys_id,
+        procedure_index = NA_integer_, procedure_name = NA_character_,
+        procedure_id = NA_integer_, form = NA
+      ))
     }
 
-    for (pi in seq_along(sys$procedures)) {
-      proc      <- sys$procedures[[pi]]
-      proc_name <- as.character(proc$procedure_name %||% "")
-      proc_id   <- if (!is.null(proc$procedure_id)) as.integer(proc$procedure_id) else NA_integer_
-      proc_form <- if (!is.null(proc$form)) as.logical(proc$form) else NA
+    tibble::tibble(
+      system_index    = si,
+      system_name     = sys_name,
+      system_id       = sys_id,
+      procedure_index = seq_along(procs),
+      procedure_name  = vapply(procs, function(p) as.character(p$procedure_name %||% ""), character(1)),
+      procedure_id    = vapply(procs, function(p) as.integer(p$procedure_id %||% NA_integer_), integer(1)),
+      form            = vapply(procs, function(p) as.logical(p$form %||% NA), logical(1))
+    )
+  })
 
-      rows[[length(rows) + 1]] <- data.frame(
-        system_index    = si,
-        system_name     = sys_name,
-        system_id       = sys_id,
-        procedure_index = pi,
-        procedure_name  = proc_name,
-        procedure_id    = proc_id,
-        form            = proc_form,
-        stringsAsFactors = FALSE
-      )
-    }
-  }
-
-  result <- do.call(rbind, rows)
-  rownames(result) <- NULL
+  result <- dplyr::bind_rows(rows)
   print(result)
   return(invisible(result))
 }
@@ -710,8 +212,7 @@ list_systems <- function(schema) {
 #' Returns a detailed table of all items (fields) in a selected procedure,
 #' including item names, UUIDs, types, and valid choices where applicable.
 #' Use this to understand exactly what data to submit and how to structure it
-#' before calling \code{build_upload_observation()} or
-#' \code{upload_observations_from_csv()}.
+#' before calling \code{upload_observations_from_csv()}.
 #'
 #' @param schema List. Project schema returned by \code{get_project_systems()}.
 #' @param system_name Character. Name of the system. Optional; takes precedence
@@ -730,7 +231,7 @@ list_systems <- function(schema) {
 #'     \item{system_name}{Character system name.}
 #'     \item{procedure_name}{Character procedure name.}
 #'     \item{form}{Logical; whether the procedure is a form.}
-#'     \item{items}{Data frame with one row per item: \code{item_id}, \code{item_uuid},
+#'     \item{items}{Tibble with one row per item: \code{item_id}, \code{item_uuid},
 #'       \code{item_name}, \code{item_description}, \code{data_type}, \code{nullable},
 #'       \code{choices}.}
 #'   }
@@ -779,15 +280,6 @@ get_procedure <- function(schema,
   rows <- lapply(seq_along(item_nodes), function(i) {
     node <- item_nodes[[i]]
 
-    # Resolve display name
-    item_name <- node$item_name
-    if (is.null(item_name) || identical(item_name, "")) item_name <- node$name
-    if (is.null(item_name) || identical(item_name, "")) item_name <- node$label
-    if (is.null(item_name) || identical(item_name, "")) item_name <- node$title
-
-    # Resolve type
-    item_type <- as.character(node$item_type %||% node$type %||% "")
-
     # Resolve choices for choice-type items
     choice_vals <- node$choices %||% node$options %||% node$items
     choices_str <- ""
@@ -801,30 +293,18 @@ get_procedure <- function(schema,
       choices_str <- paste(choice_labels, collapse = " | ")
     }
 
-    # Resolve required flag
-    req_val <- node$required %||% node$is_required
-    if (is.null(req_val)) {
-      req_str <- ""
-    } else if (is.logical(req_val)) {
-      req_str <- ifelse(isTRUE(req_val), "yes", "no")
-    } else {
-      req_str <- as.character(req_val)
-    }
-
     tibble::tibble(
       item_id          = if (!is.null(node$item_id)) as.integer(node$item_id) else NA_integer_,
       item_uuid        = as.character(node$item_uuid),
-      item_name        = as.character(item_name %||% ""),
+      item_name        = as.character(node$item_name %||% ""),
       item_description = as.character(node$item_description %||% NA_character_),
       data_type        = as.character(node$data_type %||% ""),
       nullable         = if (!is.null(node$nullable)) as.logical(node$nullable) else NA,
-      choices          = choices_str,
-      stringsAsFactors = FALSE
+      choices          = choices_str
     )
   })
 
-  result <- do.call(rbind, rows)
-  rownames(result) <- NULL
+  result <- dplyr::bind_rows(rows)
 
   sys_name  <- as.character(system$system_name %||% paste("System", idx$system_index))
   proc_name <- as.character(procedure$procedure_name %||% paste("Procedure", idx$procedure_index))
@@ -913,7 +393,7 @@ get_procedure <- function(schema,
 #' @param lat_col Latitude column. Default \code{"latitude"}.
 #' @param timestamp_col Timestamp column. Default \code{"timestamp"}.
 #'
-#' @return (Invisibly) \code{observation_data}, with two columns added:
+#' @return (Invisibly) \code{observation_data} as a tibble, with two columns added:
 #'   \describe{
 #'     \item{status}{\code{"success"} or \code{"rejected"} for that row/observation.}
 #'     \item{message}{Why it was rejected (blank on success) - bad timestamp,
@@ -1047,7 +527,7 @@ validate_csv_against_procedure <- function(procedure,
     msg[unaccounted]     <- "no values provided for this row"
   }
 
-  valid <- length(resolved$issues) == 0 && all(status == "success")
+  valid <- all(status == "success")
 
   # ---- Print summary -------------------------------------------------------
   message("\n--- CSV Validation Report ---")
@@ -1059,7 +539,7 @@ validate_csv_against_procedure <- function(procedure,
     print(resolved$matched_items[, c("item_name", "data_type"), drop = FALSE])
   }
   if (nrow(label_items) > 0) {
-    message("\nLabel item(s) (checked via taxonomic rank columns - species/genus/family/order/class/phylum/kingdom - not by name):")
+    message("\nTaxonomic label(s) checked:")
     print(label_items[, c("item_name", "data_type"), drop = FALSE])
   }
   if (nrow(resolved$missing_items) > 0) {
@@ -1090,7 +570,7 @@ validate_csv_against_procedure <- function(procedure,
   message("\n", sum(status == "success"), " of ", n, " row(s) would be uploaded.")
   message("\nValid: ", valid)
 
-  result <- observation_data
+  result <- tibble::as_tibble(observation_data)
   result$status   <- status
   result$message  <- msg
   result$.payload <- payload
@@ -1119,8 +599,8 @@ validate_csv_against_procedure <- function(procedure,
                               "in the CSV:", paste(required_missing$item_name, collapse = ", ")))
   }
   if (nrow(optional_missing) > 0) {
-    message("Note: ", nrow(optional_missing), " nullable item(s) absent from CSV (allowed): ",
-            paste(optional_missing$item_name, collapse = ", "))
+    issues <- c(issues, paste(nrow(optional_missing), "nullable/optional item(s) have no", missing_label,
+                              "in the CSV:", paste(optional_missing$item_name, collapse = ", ")))
   }
   if (length(unrecognised_names) > 0) {
     issues <- c(issues, paste(length(unrecognised_names), unrecognised_label,
@@ -1137,190 +617,6 @@ validate_csv_against_procedure <- function(procedure,
 
 
 
-#' @title Build Observation Record
-#'
-#' @description
-#' Builds a single \code{RObservationRecord} payload ready for
-#' \code{upload_observations()}, using a procedure list returned by
-#' \code{get_procedure()} rather than a raw schema. This is the preferred
-#' builder when you have already called \code{get_procedure()}, as it
-#' carries \code{system_id} and \code{procedure_id} directly.
-#'
-#' @param procedure Named list returned by \code{get_procedure()}.
-#' @param values Named list of values keyed by item UUID
-#'   (\code{item_uuid -> value}).
-#' @param recorded_at Character or POSIXct. ISO-8601 timestamp when the
-#'   observation was made.
-#' @param lon Numeric WGS-84 longitude (-180 to 180).
-#' @param lat Numeric WGS-84 latitude (-90 to 90).
-#' @param survey_uuid Character or NULL. Optional client-generated UUID used
-#'   as an idempotency key. A new UUID is generated automatically when NULL.
-#'
-#' @return A named list conforming to \code{RObservationRecord}:
-#'   \code{survey_uuid}, \code{project_system_id}, \code{procedure_id},
-#'   \code{recorded_at}, \code{lon}, \code{lat}, \code{values}.
-#'
-#' @examples
-#' \dontrun{
-#'   hdr       <- auth_headers("your_api_key")
-#'   schema    <- get_project_systems(hdr)
-#'   procedure <- get_procedure(schema,
-#'     system_name = "Plante Ivindo", procedure_name = "Arbre")
-#'
-#'   rec <- build_observation_record(
-#'     procedure   = procedure,
-#'     values      = list("item-uuid-here" = "Roe Deer"),
-#'     recorded_at = "2024-06-01T09:00:00Z",
-#'     lon         = 13.703612,
-#'     lat         = 0.931838
-#'   )
-#'   resp <- upload_observations(hdr, list(rec))
-#' }
-#'
-#' @author Adam Varley
-#' @export
-build_observation_record <- function(procedure,
-                                     values,
-                                     recorded_at,
-                                     lon,
-                                     lat,
-                                     survey_uuid = NULL) {
-
-  if (!is.list(procedure) || is.null(procedure$system_id) || is.null(procedure$procedure_id)) {
-    stop("procedure must be a named list returned by get_procedure()")
-  }
-
-  if (missing(values) || is.null(values) || length(values) == 0) {
-    stop("values must be a non-empty named list keyed by item UUID")
-  }
-  if (is.null(names(values)) || any(names(values) == "")) {
-    stop("values must be named with item UUID keys")
-  }
-
-  if (missing(recorded_at) || is.null(recorded_at)) {
-    stop("recorded_at is required")
-  }
-  if (inherits(recorded_at, "POSIXt")) {
-    recorded_at <- format(recorded_at, "%Y-%m-%dT%H:%M:%SZ")
-  } else {
-    recorded_at <- as.character(recorded_at)
-  }
-
-  if (missing(lon) || !is.numeric(lon) || length(lon) != 1 || lon < -180 || lon > 180) {
-    stop("lon must be a single numeric value between -180 and 180")
-  }
-  if (missing(lat) || !is.numeric(lat) || length(lat) != 1 || lat < -90 || lat > 90) {
-    stop("lat must be a single numeric value between -90 and 90")
-  }
-
-  if (is.null(survey_uuid)) {
-    survey_uuid <- uuid::UUIDgenerate()
-  }
-
-  list(
-    survey_uuid       = as.character(survey_uuid),
-    project_system_id = as.integer(procedure$system_id),
-    procedure_id      = as.integer(procedure$procedure_id),
-    recorded_at       = recorded_at,
-    lon               = as.numeric(lon),
-    lat               = as.numeric(lat),
-    values            = as.list(values)
-  )
-}
-
-
-#' @title Build Upload Observation
-#'
-#' @description
-#' Builds a single observation payload for the `uploadObservations` endpoint,
-#' where `values` is keyed by item UUID.
-#'
-#' @param schema List. Project schema returned by \code{get_project_systems()}.
-#' @param values Named list/vector of values keyed by item UUID.
-#' @param recorded_at Character or POSIXct. Timestamp in ISO-8601 format,
-#'   e.g. `"2024-06-01T09:00:00Z"`.
-#' @param lon Numeric longitude.
-#' @param lat Numeric latitude.
-#' @param system_index Integer index of the system in schema$systems. Default `1`.
-#' @param procedure_index Integer index of the procedure in selected system.
-#'   Default `1`.
-#'
-#' @return A named list representing one observation row for upload.
-#'
-#' @examples
-#' \dontrun{
-#'   schema <- get_project_systems(hdr)
-#'   obs <- build_upload_observation(
-#'     schema = schema,
-#'     values = list("item-uuid-here" = "Roe Deer"),
-#'     recorded_at = "2024-06-01T09:00:00Z",
-#'     lon = -1.543,
-#'     lat = 51.761
-#'   )
-#' }
-#'
-#' @author Adam Varley
-#' @export
-build_upload_observation <- function(schema,
-                                     values,
-                                     recorded_at,
-                                     lon,
-                                     lat,
-                                     system_index = 1,
-                                     procedure_index = 1) {
-
-  if (missing(schema) || is.null(schema)) {
-    stop("schema is required")
-  }
-
-  if (missing(values) || is.null(values) || length(values) == 0) {
-    stop("values must be a non-empty named list or vector keyed by item UUID")
-  }
-
-  if (is.null(names(values)) || any(names(values) == "")) {
-    stop("values must be named with item UUID keys")
-  }
-
-  if (missing(recorded_at) || is.null(recorded_at)) {
-    stop("recorded_at is required")
-  }
-
-  if (inherits(recorded_at, "POSIXt")) {
-    recorded_at <- format(recorded_at, "%Y-%m-%dT%H:%M:%SZ")
-  } else {
-    recorded_at <- as.character(recorded_at)
-  }
-
-  if (missing(lon) || !is.numeric(lon) || length(lon) != 1) {
-    stop("lon must be a single numeric value")
-  }
-
-  if (missing(lat) || !is.numeric(lat) || length(lat) != 1) {
-    stop("lat must be a single numeric value")
-  }
-
-  if (is.null(schema$systems) || length(schema$systems) < system_index) {
-    stop("system_index is out of bounds for schema$systems")
-  }
-
-  system <- schema$systems[[system_index]]
-  if (is.null(system$procedures) || length(system$procedures) < procedure_index) {
-    stop("procedure_index is out of bounds for selected system$procedures")
-  }
-
-  procedure <- system$procedures[[procedure_index]]
-
-  return(list(
-    project_system_id = system$project_system_id,
-    procedure_id = procedure$procedure_id,
-    recorded_at = recorded_at,
-    lon = as.numeric(lon),
-    lat = as.numeric(lat),
-    values = as.list(values)
-  ))
-}
-
-
 #' @title Upload Observations
 #'
 #' @description
@@ -1328,63 +624,60 @@ build_upload_observation <- function(schema,
 #'
 #' @param hdr A base URL and API key returned by \link{auth_headers} or
 #'   \link{auth_headers_dev}.
-#' @param observations List of observations created with
-#'   \code{build_upload_observation()}.
-#' @param dry_run_payload Logical. If \code{TRUE}, returns the request payload
+#' @param observations List of observations, keyed by item UUID, such as
+#'   those built by \code{build_upload_observations_from_table()}.
+#' @param dry_run Logical. If \code{TRUE}, returns the request payload
 #'   without sending it to the API. Default \code{FALSE}.
 #'
 #' @return Parsed API response as a list.
 #'
 #' @examples
 #' \dontrun{
-#'   hdr <- auth_headers("your_api_key")
-#'   schema <- get_project_systems(hdr)
-#'   obs <- build_upload_observation(
-#'     schema = schema,
-#'     values = list("item-uuid-here" = "Roe Deer"),
-#'     recorded_at = "2024-06-01T09:00:00Z",
-#'     lon = -1.543,
-#'     lat = 51.761
-#'   )
-#'   resp <- upload_observations(hdr, list(obs))
+#'   hdr       <- auth_headers("your_api_key")
+#'   schema    <- get_project_systems(hdr)
+#'   procedure <- get_procedure(schema,
+#'     system_name = "Plante Ivindo", procedure_name = "Arbre")
+#'   built <- build_upload_observations_from_table(df, procedure = procedure)
+#'   resp  <- upload_observations(hdr, built$observations)
 #' }
 #'
 #' @author Adam Varley
 #' @export
-upload_observations <- function(hdr, observations, dry_run_payload = FALSE) {
+upload_observations <- function(hdr, observations, dry_run = FALSE) {
 
   if (missing(observations) || is.null(observations) || length(observations) == 0) {
     stop("observations must be a non-empty list")
   }
 
-  body <- list(observations = observations)
-
   # Allows caller to inspect the exact JSON before sending
-  if (isTRUE(dry_run_payload)) {
-    cat(jsonlite::toJSON(body, auto_unbox = TRUE, pretty = TRUE))
-    return(invisible(body))
+  if (isTRUE(dry_run)) {
+    cat(jsonlite::toJSON(list(observations = observations), auto_unbox = TRUE, pretty = TRUE))
+    return(invisible(list(observations = observations)))
   }
 
-  urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) |>
-    httr2::req_method("POST") |>
-    httr2::req_body_json(body, auto_unbox = TRUE) |>
-    httr2::req_error(is_error = \(r) FALSE)  # never throw; we inspect the body ourselves
+  # uploadObservations rejects a batch of more than 500 observations, so
+  # larger uploads are split into sequential requests and the per-observation
+  # results concatenated back into one list, in order.
+  batch_size <- 500L
+  n <- length(observations)
+  responses <- list()
 
-  response <- httr2::req_perform(urlreq)
-  status   <- httr2::resp_status(response)
+  pb <- cli::cli_progress_bar(
+    format = "Uploading {cli::pb_current}/{cli::pb_total} observations to NatureCube | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = n,
+    clear  = FALSE
+  )
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 
-  if (status >= 400) {
-    body_text <- tryCatch(
-      httr2::resp_body_string(response),
-      error = function(e) "<could not read response body>"
-    )
-    stop(sprintf(
-      "HTTP %d from uploadObservations.\nResponse body:\n%s",
-      status, body_text
-    ))
+  for (start in seq(1L, n, by = batch_size)) {
+    end   <- min(start + batch_size - 1L, n)
+    urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) |>
+      httr2::req_method("POST") |>
+      httr2::req_body_json(list(observations = observations[start:end]), auto_unbox = TRUE)
+    responses <- c(responses, httr2::resp_body_json(.perform_or_stop(urlreq)))
+    cli::cli_progress_update(id = pb, set = end)
   }
-
-  return(httr2::resp_body_json(response))
+  responses
 }
 
 
@@ -1399,20 +692,33 @@ normalize_lookup_value <- function(x) {
 
 
 
-# Internal helper to coerce a text value to a numeric when the target item's
-# data_type calls for one, so numeric fields are sent as JSON numbers rather
-# than strings (the API rejects e.g. "20" for a numeric item).
+# Internal helper to coerce a value to the JSON type its item's data_type
+# calls for, on the final object sent to NatureCube: numeric items become
+# real numbers (the API rejects e.g. "20" as a string for a numeric item).
+# Everything else - text, choice, label, or any data_type not recognised as
+# numeric - is always forced to character, so a numeric-looking value in a
+# non-numeric field (e.g. a plot number "007") can never slip through as a
+# JSON number just because it happened to arrive as a non-character value.
+.NUMERIC_DATA_TYPE_RE <- "num|int|float|double|decimal|real"
+
 coerce_value_by_data_type <- function(value, data_type) {
-  if (is.null(data_type) || is.na(data_type) || !nzchar(data_type)) {
-    return(value)
-  }
-  if (grepl("num|int|float|double|decimal|real", data_type)) {
+  dt <- data_type %||% ""
+  if (grepl(.NUMERIC_DATA_TYPE_RE, dt)) {
     numeric_candidate <- suppressWarnings(as.numeric(value))
     if (!is.na(numeric_candidate)) {
       return(numeric_candidate)
     }
   }
-  return(value)
+  value <- as.character(value)
+  # data_type isn't numeric, but this particular value's content still looks
+  # numeric (e.g. a plot number like "30") - the dashboard re-parses
+  # numeric-looking text back into a number regardless of JSON type, so a
+  # leading quote forces it to stay text. Non-numeric-looking values (e.g.
+  # "M5") are left untouched.
+  if (!is.na(suppressWarnings(as.numeric(value)))) {
+    value <- paste0("'", value)
+  }
+  value
 }
 
 
@@ -1464,8 +770,8 @@ coerce_value_by_data_type <- function(value, data_type) {
     val      <- unique_values[i]
     rows     <- getIUCNLabels(hdr, offset = 0, search_term = val)$data
     found[i] <- nrow(rows) > 0 && any(
-      tolower(trimws(as.character(rows$label))) == tolower(val) |
-      tolower(trimws(paste(rows$genus, rows$species))) == tolower(val)
+      normalize_lookup_value(rows$label) == normalize_lookup_value(val) |
+      normalize_lookup_value(paste(rows$genus, rows$species)) == normalize_lookup_value(val)
     )
     cli::cli_progress_update(id = pb, inc = 1)
     if (i < length(unique_values)) Sys.sleep(0.2)  # throttle to avoid tripping the API's rate limit
@@ -1477,29 +783,19 @@ coerce_value_by_data_type <- function(value, data_type) {
 
 # Internal: TRUE if a non-blank cell value matches what its item's declared
 # data_type requires (numeric/boolean types only - text/choice/instruction
-# accept anything). Media (phone-photo/video/audio) and label types are
-# validated separately (file existence, label database).
+# accept anything, since coerce_value_by_data_type() forces text items to
+# character on the final payload regardless of what the raw value looks
+# like). Media (phone-photo/video/audio) and label types are validated
+# separately (file existence, label database).
 .value_matches_data_type <- function(value, data_type) {
   dt <- data_type %||% ""
-  if (grepl("num|int|float|double|decimal|real", dt)) {
+  if (grepl(.NUMERIC_DATA_TYPE_RE, dt)) {
     return(!is.na(suppressWarnings(as.numeric(value))))
   }
   if (grepl("bool", dt)) {
     return(tolower(value) %in% c("true", "false", "yes", "no", "1", "0"))
   }
   TRUE
-}
-
-
-# The API's uploadObservations endpoint requires the outgoing "recorded_at"
-# field (a fixed name in the API contract - not to be renamed) to be strict
-# ISO-8601 UTC: yyyy-mm-ddThh:mm:ssZ. Incoming timestamps are parsed via
-# lubridate::as_datetime() (any format it recognises) and reformatted to
-# that strict string; values that don't parse become NA_character_ so the
-# caller can reject just that row/observation.
-.parse_timestamps <- function(raw_values) {
-  parsed <- suppressWarnings(lubridate::as_datetime(as.character(raw_values), tz = "UTC"))
-  ifelse(is.na(parsed), NA_character_, strftime(parsed, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
 }
 
 
@@ -1524,51 +820,6 @@ collect_item_nodes <- function(x, out = list()) {
   }
 
   return(out)
-}
-
-
-# Internal helper to create an item dictionary from schema for a selected procedure.
-get_schema_item_dictionary <- function(schema, system_index = 1, procedure_index = 1) {
-  if (is.null(schema$systems) || length(schema$systems) < system_index) {
-    stop("system_index is out of bounds for schema$systems")
-  }
-
-  system <- schema$systems[[system_index]]
-  if (is.null(system$procedures) || length(system$procedures) < procedure_index) {
-    stop("procedure_index is out of bounds for selected system$procedures")
-  }
-
-  procedure <- system$procedures[[procedure_index]]
-  item_nodes <- collect_item_nodes(procedure)
-
-  if (length(item_nodes) == 0) {
-    return(data.frame(
-      item_uuid = character(),
-      item_name = character(),
-      data_type = character(),
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  rows <- lapply(item_nodes, function(node) {
-    item_name <- node$item_name
-    if (is.null(item_name) || identical(item_name, "")) item_name <- node$name
-    if (is.null(item_name) || identical(item_name, "")) item_name <- node$label
-    if (is.null(item_name) || identical(item_name, "")) item_name <- node$title
-
-    data.frame(
-      item_uuid = as.character(node$item_uuid),
-      item_name = as.character(item_name %||% ""),
-      data_type = as.character(node$data_type %||% ""),
-      stringsAsFactors = FALSE
-    )
-  })
-
-  dictionary <- do.call(rbind, rows)
-  dictionary <- dictionary[dictionary$item_uuid != "", , drop = FALSE]
-  dictionary <- dictionary[!duplicated(dictionary$item_uuid), , drop = FALSE]
-  rownames(dictionary) <- NULL
-  return(dictionary)
 }
 
 
@@ -1638,12 +889,8 @@ resolve_schema_indices <- function(schema,
 #' @description
 #' Converts a wide-format data frame - one row per feature, procedure item
 #' names spread as column headers - into a list of \code{RObservationRecord}
-#' payloads for \code{upload_observations()}, automatically resolving item
-#' UUIDs from project schema when needed.
-#'
-#' Supply either a \code{procedure} list (returned by \code{get_procedure()})
-#' or a raw \code{schema} with \code{system_name}/\code{procedure_name}.
-#' When \code{procedure} is provided it takes precedence.
+#' payloads for \code{upload_observations()}, resolving item UUIDs from the
+#' \code{procedure} list returned by \code{get_procedure()}.
 #'
 #' Every observation is validated as a whole: longitude/latitude must parse
 #' as decimals, the timestamp must parse (via \code{lubridate::as_datetime()}
@@ -1664,17 +911,7 @@ resolve_schema_indices <- function(schema,
 #'
 #' @param data Data frame of observation rows - one row per feature, with
 #'   procedure item names as column headers.
-#' @param procedure Named list returned by \code{get_procedure()}. Takes
-#'   precedence over \code{schema} when provided.
-#' @param schema Project schema returned by \code{get_project_systems()}.
-#'   Used only when \code{procedure} is \code{NULL}.
-#' @param system_index Integer index of target system in schema. Optional.
-#' @param procedure_index Integer index of target procedure in selected system.
-#'   Optional.
-#' @param system_name Character system name used to resolve system index.
-#'   Optional.
-#' @param procedure_name Character procedure name used to resolve procedure
-#'   index. Optional.
+#' @param procedure Named list returned by \code{get_procedure()}.
 #' @param lon_col Character name of longitude column. Default \code{"longitude"}.
 #' @param lat_col Character name of latitude column. Default \code{"latitude"}.
 #' @param timestamp_col Character name of the timestamp column. Default
@@ -1695,8 +932,7 @@ resolve_schema_indices <- function(schema,
 #'   schema    <- get_project_systems(hdr)
 #'   procedure <- get_procedure(schema,
 #'     system_name = "Plante Ivindo", procedure_name = "Arbre")
-#'   df <- read_csv("tutorials/example_observation_data.csv",
-#'                  stringsAsFactors = FALSE)
+#'   df <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
 #'   built <- build_upload_observations_from_table(
 #'     data      = df,
 #'     procedure = procedure
@@ -1706,12 +942,7 @@ resolve_schema_indices <- function(schema,
 #' @author Adam Varley
 #' @export
 build_upload_observations_from_table <- function(data,
-                                                 procedure = NULL,
-                                                 schema = NULL,
-                                                 system_index = NULL,
-                                                 procedure_index = NULL,
-                                                 system_name = NULL,
-                                                 procedure_name = NULL,
+                                                 procedure,
                                                  lon_col = "longitude",
                                                  lat_col = "latitude",
                                                  timestamp_col = "timestamp") {
@@ -1722,39 +953,18 @@ build_upload_observations_from_table <- function(data,
     stop("Missing required columns in data: ", paste(missing_cols, collapse = ", "))
   }
 
-  # Resolve IDs and item dictionary from procedure list or schema
-  use_procedure <- !is.null(procedure) && is.list(procedure) && !is.null(procedure$system_id)
-
-  if (use_procedure) {
-    sys_id  <- as.integer(procedure$system_id)
-    proc_id <- as.integer(procedure$procedure_id)
-    dictionary <- procedure$items[, c("item_uuid", "item_name", "data_type"), drop = FALSE]
-  } else {
-    if (is.null(schema)) stop("Either procedure or schema must be provided")
-    idx <- resolve_schema_indices(
-      schema = schema,
-      system_index = system_index,
-      procedure_index = procedure_index,
-      system_name = system_name,
-      procedure_name = procedure_name
-    )
-    dictionary <- get_schema_item_dictionary(
-      schema = schema,
-      system_index = idx$system_index,
-      procedure_index = idx$procedure_index
-    )
-    sys_obj  <- schema$systems[[idx$system_index]]
-    proc_obj <- sys_obj$procedures[[idx$procedure_index]]
-    sys_id   <- as.integer(sys_obj$project_system_id)
-    proc_id  <- as.integer(proc_obj$procedure_id)
+  if (!is.list(procedure) || is.null(procedure$system_id)) {
+    stop("procedure must be a named list returned by get_procedure()")
   }
 
   .build_wide_observations(
-    data = data, dictionary = dictionary, sys_id = sys_id, proc_id = proc_id,
+    data       = data,
+    dictionary = procedure$items[, c("item_uuid", "item_name", "data_type"), drop = FALSE],
+    sys_id     = as.integer(procedure$system_id),
+    proc_id    = as.integer(procedure$procedure_id),
     lon_col = lon_col, lat_col = lat_col, timestamp_col = timestamp_col
   )
 }
-
 
 
 # Internal: build RObservationRecord payloads from a wide-format table
@@ -1788,7 +998,12 @@ build_upload_observations_from_table <- function(data,
     stop("No columns could be matched to procedure items. Check column names against item_name in the procedure.")
   }
 
-  iso_timestamp <- .parse_timestamps(data[[timestamp_col]])
+  # The API's "recorded_at" field requires strict ISO-8601 UTC
+  # (yyyy-mm-ddThh:mm:ssZ) - a bare POSIXct serialises to JSON in a format
+  # the API rejects, so it's reformatted to that exact string here.
+  parsed_timestamp <- suppressWarnings(lubridate::as_datetime(data[[timestamp_col]], tz = "UTC"))
+  iso_timestamp <- ifelse(is.na(parsed_timestamp), NA_character_,
+                          strftime(parsed_timestamp, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
   lon_vals <- suppressWarnings(as.numeric(data[[lon_col]]))
   lat_vals <- suppressWarnings(as.numeric(data[[lat_col]]))
 
@@ -1798,9 +1013,9 @@ build_upload_observations_from_table <- function(data,
     row_values <- list()
     row_media  <- list()
 
-    if (is.na(lon_vals[r]))       reasons <- c(reasons, paste0("longitude '", data[[lon_col]][[r]], "' is not a valid decimal"))
-    if (is.na(lat_vals[r]))       reasons <- c(reasons, paste0("latitude '", data[[lat_col]][[r]], "' is not a valid decimal"))
-    if (is.na(iso_timestamp[r]))  reasons <- c(reasons, paste0("timestamp '", data[[timestamp_col]][[r]], "' could not be parsed"))
+    if (is.na(lon_vals[r]))      reasons <- c(reasons, paste0(lon_col, " '", data[[lon_col]][[r]], "' is not a valid decimal"))
+    if (is.na(lat_vals[r]))      reasons <- c(reasons, paste0(lat_col, " '", data[[lat_col]][[r]], "' is not a valid decimal"))
+    if (is.na(iso_timestamp[r])) reasons <- c(reasons, paste0(timestamp_col, " '", data[[timestamp_col]][[r]], "' could not be parsed"))
 
     for (i in seq_along(resolved_cols)) {
       val_chr <- trimws(as.character(data[[resolved_cols[i]]][[r]]))
@@ -1874,10 +1089,9 @@ build_upload_observations_from_table <- function(data,
     }
   }
 
-  unresolved_rows <- data.frame(
+  unresolved_rows <- tibble::tibble(
     item_name = unresolved_cols,
-    item_uuid = rep(NA_character_, length(unresolved_cols)),
-    stringsAsFactors = FALSE
+    item_uuid = rep(NA_character_, length(unresolved_cols))
   )
 
   list(
@@ -1895,13 +1109,11 @@ build_upload_observations_from_table <- function(data,
 # signed-URL flow, and returns a named character vector mapping basename ->
 # blob_path.
 .upload_pending_media <- function(hdr, media_uploads) {
-  filepaths    <- vapply(media_uploads, function(m) m$filepath, character(1))
-  filenames    <- basename(filepaths)
+  filenames <- vapply(media_uploads, function(m) basename(m$filepath), character(1))
 
   media_files <- stats::setNames(
-    lapply(filepaths, function(p) {
-      m <- media_uploads[[match(p, filepaths)]]
-      list(filepath = p, data_type = m$data_type, content_type = m$content_type)
+    lapply(media_uploads, function(m) {
+      list(filepath = m$filepath, data_type = m$data_type, content_type = m$content_type)
     }),
     filenames
   )
@@ -1931,7 +1143,7 @@ build_upload_observations_from_table <- function(data,
 #' @param hdr A base URL and API key returned by \link{auth_headers} or
 #'   \link{auth_headers_dev}. Used only for the actual upload calls (media
 #'   signed URLs and \code{uploadObservations} itself).
-#' @param validated The data frame returned by
+#' @param validated The tibble returned by
 #'   \link{validate_csv_against_procedure}.
 #' @param dry_run Logical; if \code{TRUE}, returns the built observations
 #'   without uploading anything (media files are not uploaded either).
@@ -1954,10 +1166,11 @@ build_upload_observations_from_table <- function(data,
 #'   procedure <- get_procedure(schema,
 #'     system_name = "Plante Ivindo", procedure_name = "Arbre")
 #'
+#'   observation_data <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
 #'   validated <- validate_csv_against_procedure(
-#'     procedure = procedure,
-#'     csv_path  = "tutorials/example_observation_data.csv",
-#'     hdr       = hdr
+#'     procedure        = procedure,
+#'     observation_data = observation_data,
+#'     hdr              = hdr
 #'   )
 #'
 #'   result <- upload_observations_from_csv(hdr = hdr, validated = validated)
@@ -1966,8 +1179,8 @@ build_upload_observations_from_table <- function(data,
 #' @author Adam Varley
 #' @export
 upload_observations_from_csv <- function(hdr, validated, dry_run = FALSE) {
-  if (!is.data.frame(validated) || !".payload" %in% names(validated)) {
-    stop("validated must be the data frame returned by validate_csv_against_procedure().")
+  if (!is.data.frame(validated) || !"status" %in% names(validated)) {
+    stop("validated must be the tibble returned by validate_csv_against_procedure().")
   }
 
   successful <- validated[validated$status == "success", , drop = FALSE]
@@ -2019,17 +1232,9 @@ upload_observations_from_csv <- function(hdr, validated, dry_run = FALSE) {
     }
   }
 
-  n_obs <- length(observations)
-  cli::cli_progress_bar(
-    "Uploading {cli::pb_current}/{cli::pb_total} observations to NatureCube | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
-    total = n_obs,
-    .auto_close = FALSE
-  )
-  upload_step_ok <- FALSE
-  on.exit(cli::cli_progress_done(result = if (upload_step_ok) "done" else "failed"), add = TRUE)
-
+  # upload_observations() shows its own progress bar - it's the one doing the
+  # (possibly chunked, >500 observations) network calls.
   response <- upload_observations(hdr = hdr, observations = observations)
-  upload_step_ok <- TRUE
 
   n_success <- sum(vapply(response, function(x) identical(x$status, "success"), logical(1)))
   n_failed  <- length(response) - n_success
@@ -2057,178 +1262,4 @@ upload_observations_from_csv <- function(hdr, validated, dry_run = FALSE) {
     resolved_rows = length(observations),
     result        = successful[, c(keep_cols, "api_status", "api_message"), drop = FALSE]
   )
-}
-
-
-#' @title Upload Phone Observations
-#'
-#' @description
-#' Uploads phone observation records to the NatureCube platform. This function
-#' processes one feature at a time. When observations include media
-#' (photos, videos, audio), files are uploaded via signed URLs to cloud storage
-#' first, then observation metadata is submitted (matching the mobile app flow).
-#'
-#' The function loops through all features in the payload, providing progress messages
-#' and collecting any errors that occur. Partial failures do not stop the upload process;
-#' instead, errors are collected and returned in the summary.
-#'
-#' @param hdr A base URL and API key returned by \link{auth_headers} or \link{auth_headers_dev}.
-#' @param feature_payload List. A list of feature records created with \code{build_feature_record()}.
-#' @param device_settings List. Device settings created with \code{build_device_settings()}.
-#' @param media_dir Character or NULL. Path to the directory containing media files.
-#'   Required if any observations include media types (photo, video, audio).
-#' @param validate Logical. Whether to validate the payload before uploading. Default is TRUE.
-#'
-#' @return A list containing:
-#'   \describe{
-#'     \item{successes}{List of successfully uploaded feature UUIDs with their responses}
-#'     \item{failures}{List of failed feature UUIDs with their error messages}
-#'     \item{summary}{Character string summarizing the upload results}
-#'   }
-#'
-#' @examples
-#' \dontrun{
-#'   # Set up authentication
-#'   hdr <- auth_headers("your_api_key")
-#'
-#'   # Build device settings
-#'   device <- build_device_settings(
-#'     device_id = "device-123",
-#'     phone_model = "iPhone 14",
-#'     phone_os = "iOS 17",
-#'     carrier = "Vodafone",
-#'     build_number = "1.0.0",
-#'     build_id = "build-001"
-#'   )
-#'
-#'   # Build an observation
-#'   obs1 <- build_observation(
-#'     item_uuid = "item-uuid-1",
-#'     item_type = "text",
-#'     data = list("My observation text"),
-#'     geometry = list(type = "Point", coordinates = c(-1.5, 53.4))
-#'   )
-#'
-#'   # Build a feature with observations
-#'   feature1 <- build_feature_record(
-#'     feature_uuid = "feature-uuid-1",
-#'     project_system_id = 10,
-#'     procedure_id = 5,
-#'     start_time = Sys.time() - 3600,
-#'     end_time = Sys.time(),
-#'     created_by_method = "drawn",
-#'     geometry = list(type = "Point", coordinates = c(-1.5, 53.4)),
-#'     observations = list(obs1)
-#'   )
-#'
-#'   # Upload
-#'   result <- upload_phone_observations(
-#'     hdr = hdr,
-#'     feature_payload = list(feature1),
-#'     device_settings = device
-#'   )
-#'
-#'   print(result$summary)
-#' }
-#'
-#' @author Adam Varley
-#' @export
-upload_phone_observations <- function(hdr,
-                                        feature_payload,
-                                        device_settings,
-                                        media_dir = NULL,
-                                        validate = TRUE) {
-
-# Validate inputs if requested
-if (validate) {
-  validation <- validate_observation_payload(feature_payload, device_settings, media_dir)
-  if (!validation$valid) {
-    stop("Validation failed:\n", paste(validation$errors, collapse = "\n"))
-  }
-}
-
-# Initialize result containers
-successes <- list()
-failures <- list()
-
-n_features <- length(feature_payload)
-message("Starting upload of ", n_features, " feature(s)...")
-
-# Process each feature one at a time
-for (i in seq_along(feature_payload)) {
-  feature <- feature_payload[[i]]
-  feature_uuid <- feature$feature_uuid
-
-  message("Uploading feature ", i, " of ", n_features, " (", feature_uuid, ")...")
-
-  tryCatch({
-    # Build the payload for this single feature
-    # Wrap in a list as the API expects feature_payload to be an array
-    single_feature_payload <- list(feature)
-
-    device_upload <- list(
-      feature_payload = single_feature_payload,
-      device_settings = device_settings
-    )
-
-    # Upload media via signed URLs before metadata push
-    if (!is.null(media_dir) && !is.null(feature$observations)) {
-      media_files <- collect_media_files(feature$observations, media_dir)
-      if (length(media_files) > 0) {
-        message("  Uploading ", length(media_files), " media file(s) via signed URLs...")
-        upload_field_media_files(hdr, media_files)
-      }
-    }
-
-    # Metadata-only push — form field "data" (SchemaChecker)
-    json_payload <- jsonlite::toJSON(device_upload, auto_unbox = TRUE)
-    urlreq <- httr2::req_url_path_append(
-      hdr$root,
-      "pushPhoneObservations",
-      hdr$key
-    )
-    urlreq <- urlreq |>
-      httr2::req_method("POST") |>
-      httr2::req_body_multipart(data = json_payload)
-
-    # Perform the request
-    response <- httr2::req_perform(urlreq)
-    resp_body <- httr2::resp_body_json(response)
-
-    # Record success
-    successes[[feature_uuid]] <- list(
-      feature_uuid = feature_uuid,
-      response = resp_body
-    )
-
-    message("  \u2713 Feature ", feature_uuid, " uploaded successfully")
-
-  }, error = function(e) {
-    # Record failure
-    error_msg <- conditionMessage(e)
-    failures[[feature_uuid]] <<- list(
-      feature_uuid = feature_uuid,
-      error = error_msg
-    )
-
-    message("  \u2717 Feature ", feature_uuid, " failed: ", error_msg)
-  })
-}
-
-# Build summary
-n_success <- length(successes)
-n_failed <- length(failures)
-summary_msg <- sprintf(
-  "Upload complete: %d of %d features uploaded successfully, %d failed",
-  n_success, n_features, n_failed
-)
-
-message(summary_msg)
-
-# Return results
-return(list(
-  successes = successes,
-  failures = failures,
-  summary = summary_msg
-))
 }
