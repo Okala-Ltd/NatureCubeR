@@ -4,61 +4,42 @@
 \alias{upload_observations_from_csv}
 \title{Upload Observations From CSV}
 \usage{
-upload_observations_from_csv(
-  hdr,
-  csv_path,
-  procedure = NULL,
-  system_name = NULL,
-  procedure_name = NULL,
-  system_index = NULL,
-  procedure_index = NULL,
-  dry_run = FALSE,
-  ...
-)
+upload_observations_from_csv(hdr, validated, dry_run = FALSE)
 }
 \arguments{
 \item{hdr}{A base URL and API key returned by \link{auth_headers} or
-\link{auth_headers_dev}.}
+\link{auth_headers_dev}. Used only for the actual upload calls (media
+signed URLs and \code{uploadObservations} itself).}
 
-\item{csv_path}{Path to CSV containing observation rows.}
+\item{validated}{The tibble returned by
+\link{validate_csv_against_procedure}.}
 
-\item{procedure}{Named list returned by \code{get_procedure()}. Takes
-precedence over \code{schema} when provided.}
-
-\item{system_name}{Character system name. Used with \code{schema} only.}
-
-\item{procedure_name}{Character procedure name. Used with \code{schema} only.}
-
-\item{system_index}{Integer system index. Used with \code{schema} only.}
-
-\item{procedure_index}{Integer procedure index. Used with \code{schema} only.}
-
-\item{dry_run}{Logical; if \code{TRUE}, returns built observations without
-uploading. Default \code{FALSE}.}
-
-\item{...}{Additional arguments passed to
-\code{build_upload_observations_from_table()}, e.g. \code{format},
-\code{lon_col}, \code{timestamp_col}.}
+\item{dry_run}{Logical; if \code{TRUE}, returns the built observations
+without uploading anything (media files are not uploaded either).
+Default \code{FALSE}.}
 }
 \value{
 A list with \code{uploaded}, \code{response} (per-observation API
-  results), \code{n_success}, \code{n_failed}, the built \code{observations},
-  \code{resolved_rows}, and \code{unresolved_rows}. The API validates each
-  observation independently in a single request, so one rejected
-  observation does not prevent the others from being saved; a final
-  success/failure summary is printed once the upload completes.
+  results), \code{n_success}, \code{n_failed}, \code{observations} (the
+  payloads sent), and \code{result}: \code{validated}'s successful rows
+  with \code{api_status}/\code{api_message} columns added (or
+  \code{"pending"} on a \code{dry_run}) - the simplest way to see what
+  happened to each row. The API validates each observation independently
+  in a single request, so one rejected-by-the-API observation does not
+  prevent the others from being saved; a final success/failure summary is
+  printed once the upload completes.
 }
 \description{
-One-call workflow to read a CSV file, build observations, and upload to
-\code{uploadObservations}. Pass a \code{procedure} list from
-\code{get_procedure()} (preferred) or a raw \code{schema} with
-\code{system_name}/\code{procedure_name}.
+Uploads the result of \link{validate_csv_against_procedure} to
+\code{uploadObservations} - mirroring how \link{upload_edna_records} takes
+the output of \link{check_edna_labels}. Only rows with \code{status ==
+"success"} are sent; nothing is rebuilt and no label is checked against
+the database again, since \code{validated} already did that.
 
-Both long and wide CSV layouts are supported and auto-detected; see
-\code{build_upload_observations_from_table()} for details. Pass
-\code{format = "long"} or \code{format = "wide"} (via \code{...}) to
-override detection. The CSV's timestamp column (default \code{"timestamp"})
-must use the strict ISO-8601 UTC format \code{yyyy-mm-ddThh:mm:ssZ}.
+If any of those rows reference a local media file (\code{phone-photo}/
+\code{phone-video}/\code{phone-audio}), it's uploaded via a signed URL to
+cloud storage first, and the resulting \code{blob_path} - not the local
+path - is what gets stored on the observation.
 }
 \examples{
 \dontrun{
@@ -67,12 +48,14 @@ must use the strict ISO-8601 UTC format \code{yyyy-mm-ddThh:mm:ssZ}.
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
 
-  result <- upload_observations_from_csv(
-    hdr       = hdr,
-    csv_path  = "tutorials/example_observation_data.csv",
-    procedure = procedure,
-    dry_run   = TRUE
+  observation_data <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
+  validated <- validate_csv_against_procedure(
+    procedure        = procedure,
+    observation_data = observation_data,
+    hdr              = hdr
   )
+
+  result <- upload_observations_from_csv(hdr = hdr, validated = validated)
 }
 
 }

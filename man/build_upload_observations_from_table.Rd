@@ -6,90 +6,57 @@
 \usage{
 build_upload_observations_from_table(
   data,
-  procedure = NULL,
-  schema = NULL,
-  system_index = NULL,
-  procedure_index = NULL,
-  system_name = NULL,
-  procedure_name = NULL,
-  format = "auto",
+  procedure,
   lon_col = "longitude",
   lat_col = "latitude",
-  timestamp_col = "timestamp",
-  item_uuid_col = "item_uuid",
-  item_name_col = "item_name",
-  value_col = "data",
-  numeric_value_col = "numbers",
-  observation_id_col = "observation_id"
+  timestamp_col = "timestamp"
 )
 }
 \arguments{
-\item{data}{Data frame of observation rows.}
+\item{data}{Data frame of observation rows - one row per feature, with
+procedure item names as column headers.}
 
-\item{procedure}{Named list returned by \code{get_procedure()}. Takes
-precedence over \code{schema} when provided.}
-
-\item{schema}{Project schema returned by \code{get_project_systems()}.
-Used only when \code{procedure} is \code{NULL}.}
-
-\item{system_index}{Integer index of target system in schema. Optional.}
-
-\item{procedure_index}{Integer index of target procedure in selected system.
-Optional.}
-
-\item{system_name}{Character system name used to resolve system index.
-Optional.}
-
-\item{procedure_name}{Character procedure name used to resolve procedure
-index. Optional.}
-
-\item{format}{One of \code{"auto"} (default), \code{"long"}, or
-\code{"wide"}. When \code{"auto"}, long format is assumed if
-\code{item_name_col} is present in \code{data}, otherwise wide format.}
+\item{procedure}{Named list returned by \code{get_procedure()}.}
 
 \item{lon_col}{Character name of longitude column. Default \code{"longitude"}.}
 
 \item{lat_col}{Character name of latitude column. Default \code{"latitude"}.}
 
 \item{timestamp_col}{Character name of the timestamp column. Default
-\code{"timestamp"}. Values must be in the strict ISO-8601 UTC format
-\code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}) -- any
-other format stops the build with an error listing the offending
-value(s).}
-
-\item{item_uuid_col}{Character name of item UUID column.
-Default \code{"item_uuid"}.}
-
-\item{item_name_col}{Character name of item name column.
-Default \code{"item_name"}.}
-
-\item{value_col}{Character name of primary value column. Default \code{"data"}.}
-
-\item{numeric_value_col}{Character name of numeric fallback value column.
-Default \code{"numbers"}.}
-
-\item{observation_id_col}{Character name of observation ID column.
-Default \code{"observation_id"}.}
+\code{"timestamp"}.}
 }
 \value{
-A list with \code{observations}, \code{unresolved_rows}, and
-  \code{resolved_rows}.
+A list with \code{observations} (only those that passed every
+  check), \code{source_ids} (the original CSV row number, parallel to
+  \code{observations} - use this to trace an uploaded observation back to
+  its source row), \code{unresolved_rows},
+  \code{resolved_rows}, \code{media_uploads} (local files pending
+  signed-URL upload for surviving observations), and \code{rejected}
+  (observations dropped for any failed check, each with an identifier and
+  the reasons).
 }
 \description{
-Converts a flat data frame into a list of \code{RObservationRecord} payloads
-for \code{upload_observations()}, automatically resolving item UUIDs from
-project schema when needed.
+Converts a wide-format data frame - one row per feature, procedure item
+names spread as column headers - into a list of \code{RObservationRecord}
+payloads for \code{upload_observations()}, resolving item UUIDs from the
+\code{procedure} list returned by \code{get_procedure()}.
 
-Supply either a \code{procedure} list (returned by \code{get_procedure()})
-or a raw \code{schema} with \code{system_name}/\code{procedure_name}.
-When \code{procedure} is provided it takes precedence.
+Every observation is validated as a whole: longitude/latitude must parse
+as decimals, the timestamp must parse (via \code{lubridate::as_datetime()}
+- any format it recognises), every referenced media file must exist on
+disk, and every other value must match its declared data_type. A single
+bad field rejects the whole observation, which is then reported in
+\code{rejected} instead of being built/uploaded. This function is fully
+offline - it does not connect to NatureCube.
 
-Two table layouts are supported and auto-detected, mirroring
-\code{validate_csv_against_procedure()}: \strong{long} format (one row per
-observation item, with \code{item_name}/\code{item_uuid} and \code{data}
-columns) and \strong{wide} format (one row per feature, with procedure item
-names spread as column headers). Override detection with
-\code{format = "long"} or \code{format = "wide"}.
+If the procedure has a \code{label} data_type item, its value is read
+from fixed taxonomic rank columns - \code{species}, \code{genus},
+\code{family}, \code{order}, \code{class}, \code{phylum}, \code{kingdom} -
+not from a column matching the item's own name. The most specific
+non-blank rank is used (an organism only identified to genus still gets
+uploaded, using that genus). This function does not check that value
+against the label database - only \link{validate_csv_against_procedure}
+does, since that's the only step here that needs a NatureCube connection.
 }
 \examples{
 \dontrun{
@@ -97,8 +64,7 @@ names spread as column headers). Override detection with
   schema    <- get_project_systems(hdr)
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
-  df <- read_csv("tutorials/example_observation_data.csv",
-                 stringsAsFactors = FALSE)
+  df <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
   built <- build_upload_observations_from_table(
     data      = df,
     procedure = procedure

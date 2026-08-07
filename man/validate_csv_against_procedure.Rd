@@ -6,11 +6,8 @@
 \usage{
 validate_csv_against_procedure(
   procedure,
-  csv_path,
-  format = "auto",
-  item_name_col = "item_name",
-  value_col = "data",
-  numeric_value_col = "numbers",
+  observation_data,
+  hdr,
   lon_col = "longitude",
   lat_col = "latitude",
   timestamp_col = "timestamp"
@@ -19,61 +16,62 @@ validate_csv_against_procedure(
 \arguments{
 \item{procedure}{Named list returned by \code{get_procedure()}.}
 
-\item{csv_path}{Path to the CSV file to validate.}
+\item{observation_data}{Data frame of observation rows - one row per
+feature, with procedure item names as column headers.}
 
-\item{format}{One of \code{"auto"} (default), \code{"long"}, or
-\code{"wide"}.}
-
-\item{item_name_col}{Column holding item names (long format only).
-Default \code{"item_name"}.}
-
-\item{value_col}{Column holding text values (long format only).
-Default \code{"data"}.}
-
-\item{numeric_value_col}{Column holding numeric values (long format
-only). Default \code{"numbers"}.}
+\item{hdr}{A base URL and API key returned by \link{auth_headers} or
+\link{auth_headers_dev}. Required (not optional): it is used to check
+any \code{label} data_type values against the label database via
+\link{getIUCNLabels}, and this check cannot be silently skipped.}
 
 \item{lon_col}{Longitude column. Default \code{"longitude"}.}
 
 \item{lat_col}{Latitude column. Default \code{"latitude"}.}
 
-\item{timestamp_col}{Timestamp column. Default \code{"timestamp"}. Values
-must be in the strict format \code{yyyy-mm-ddThh:mm:ssZ}.}
+\item{timestamp_col}{Timestamp column. Default \code{"timestamp"}.}
 }
 \value{
-A list (invisibly) with elements:
+(Invisibly) \code{observation_data} as a tibble, with two columns added:
   \describe{
-    \item{format}{Detected or specified format: \code{"long"} or \code{"wide"}.}
-    \item{matched_items}{Procedure items found in the CSV.}
-    \item{unrecognised_names}{Item names/columns in the CSV not in the procedure.}
-    \item{missing_items}{Procedure items absent from the CSV.}
-    \item{type_issues}{Data frame of value/data_type conflicts.}
-    \item{feature_groups}{How rows map to parent features.}
-    \item{valid}{Logical; \code{TRUE} when no blocking issues found.}
+    \item{status}{\code{"success"} or \code{"rejected"} for that row/observation.}
+    \item{message}{Why it was rejected (blank on success) - bad timestamp,
+      non-decimal lon/lat, missing media file, unmatched label, or a
+      wrong-typed value.}
   }
+  Two further columns, \code{.payload} and \code{.media}, carry the
+  already-built upload payload (including the label database check) for
+  each row - pass this whole data frame as \code{validated} to
+  \link{upload_observations_from_csv} to upload it directly, with no
+  rebuilding and no re-checking any labels.
 }
 \description{
-Checks an observation CSV against a procedure object returned by
-\code{get_procedure()}. Two CSV layouts are supported and
-auto-detected:
+Checks a wide-format observation table (one row per feature; procedure
+item names spread as column headers) against a procedure object returned
+by \code{get_procedure()}, and mandatorily validates every row the same
+way \code{upload_observations_from_csv()} would build it - including
+checking any \code{label} data_type value against the label database.
 
-\strong{Long format} -- one row per observation item. Has an
-\code{item_name} column and a \code{data} column. Rows sharing the
-same lat/lon will become observations under the same parent feature.
+The table must have one column per procedure item (matched by name),
+plus \code{longitude}, \code{latitude}, and \code{timestamp} columns.
 
-\strong{Wide format} -- one row per feature. Procedure item names are
-spread as column headers; each row contains all item values for one
-feature. Must still have \code{longitude}, \code{latitude}, and
-\code{timestamp} columns.
+If the procedure has a \code{label} data_type item, the table should carry
+taxonomic rank columns - \code{species}, \code{genus}, \code{family},
+\code{order}, \code{class}, \code{phylum}, \code{kingdom} - looked up by
+those fixed names, not by matching the label item's own item_name. Not
+every organism is identified all the way to species: the most specific
+non-blank rank is used (e.g. one only identified to genus still gets
+checked/uploaded using that genus). Every unique resulting value is
+checked against the wider IUCN species database (via
+\link{getIUCNLabels}) once; matching is an exact (case-insensitive) match
+against a returned row's name.
 
-The format is detected automatically: if the CSV contains a column
-matching \code{item_name_col} it is treated as long format, otherwise
-wide format is assumed. Override with \code{format = "long"} or
-\code{format = "wide"}.
-
-The timestamp column must use the strict ISO-8601 UTC format
-\code{yyyy-mm-ddThh:mm:ssZ} (e.g. \code{"2025-10-29T00:00:00Z"}); values
-in any other format are reported as issues.
+An observation is only valid if \strong{every} field on it validates:
+longitude/latitude parse as decimals, the timestamp parses (via
+\code{lubridate::as_datetime()}), every referenced media file exists on
+disk, every label value matches the label database, and every other value
+matches its declared data_type. A single bad field rejects the whole
+observation, mirroring \code{check_edna_labels()}/\code{upload_edna_records()}'s
+status-gated pattern.
 }
 \examples{
 \dontrun{
@@ -82,13 +80,9 @@ in any other format are reported as issues.
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
 
-  # Long format
-  validate_csv_against_procedure(procedure,
-    csv_path = "tutorials/example_observation_data.csv")
-
-  # Wide format (auto-detected or explicit)
-  validate_csv_against_procedure(procedure,
-    csv_path = "tutorials/example_wide.csv", format = "wide")
+  observation_data <- readr::read_csv("tutorials/example_wide.csv")
+  validated <- validate_csv_against_procedure(procedure,
+    observation_data = observation_data, hdr = hdr)
 }
 
 }
