@@ -29,6 +29,7 @@
 #' @return A list of file descriptors with \code{filename}, \code{blob_path},
 #'   \code{signed_url}, and \code{content_type}.
 #'
+#' @author Cristobal Salamé
 #' @keywords internal
 get_field_media_upload_urls <- function(hdr, files) {
   if (length(files) == 0) {
@@ -39,6 +40,17 @@ get_field_media_upload_urls <- function(hdr, files) {
   all_results <- list()
   batch_size <- 50L
   n <- length(files)
+
+  pb <- cli::cli_progress_bar(
+    format = "Presigning {cli::pb_current}/{cli::pb_total} media file(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = n,
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() for the same
+  # pattern and why tryCatch's `error` handler alone isn't enough.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
   for (start in seq(1L, n, by = batch_size)) {
     end <- min(start + batch_size - 1L, n)
     batch <- files[start:end]
@@ -55,6 +67,7 @@ get_field_media_upload_urls <- function(hdr, files) {
     response <- httr2::req_perform(urlreq)
     body <- httr2::resp_body_json(response)
     all_results <- c(all_results, body$files)
+    cli::cli_progress_update(id = pb, set = end)
   }
 
   return(all_results)
@@ -418,7 +431,7 @@ get_procedure <- function(schema,
 #'     observation_data = observation_data, hdr = hdr)
 #' }
 #'
-#' @author Adam Varley
+#' @author Adam Varley, Cristobal Salamé
 #' @export
 validate_csv_against_procedure <- function(procedure,
                                            observation_data,
@@ -1176,7 +1189,7 @@ build_upload_observations_from_table <- function(data,
 #'   result <- upload_observations_from_csv(hdr = hdr, validated = validated)
 #' }
 #'
-#' @author Adam Varley
+#' @author Cristobal Salamé
 #' @export
 upload_observations_from_csv <- function(hdr, validated, dry_run = FALSE) {
   if (!is.data.frame(validated) || !"status" %in% names(validated)) {

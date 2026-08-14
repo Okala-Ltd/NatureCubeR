@@ -151,8 +151,8 @@ update_media_timestamps <- function(hdr, media_records) {
 #'   chunk. Recommended values: 50-200 depending on network conditions. If
 #'   chunksize exceeds the number of rows, it will be automatically adjusted.
 #'
-#' @return No explicit return value. Progress messages are displayed for each
-#'   chunk submitted.
+#' @return No explicit return value. A progress bar tracks records submitted
+#'   across all chunks.
 #'
 #' @examples
 #' \dontrun{
@@ -186,19 +186,55 @@ update_media_timestamps <- function(hdr, media_records) {
 #' \link{update_media_timestamps} for direct submission without chunking
 #'
 #' @author
-#' Adam Varley
+#' Adam Varley, Cristobal Salamé
 #' @export
 push_new_timestamps <- function(hdr, media_metadata, chunksize) {
+  # Validate required columns up front, so a mistake (e.g. forgetting to
+  # join in media_file_record_id before calling this) fails immediately with
+  # a clear message instead of surfacing as a 422 from the API partway
+  # through a chunked upload.
+  required_cols <- c("media_file_record_id", "new_timestamp")
+  missing_cols <- setdiff(required_cols, names(media_metadata))
+  if (length(missing_cols) > 0) {
+    stop(
+      "media_metadata is missing required column(s): ", paste(missing_cols, collapse = ", "),
+      ". Use get_media_assets() to get media_file_record_id.",
+      call. = FALSE
+    )
+  }
+
+  if (anyNA(media_metadata$media_file_record_id)) {
+    stop("media_file_record_id cannot contain NA values", call. = FALSE)
+  }
+  if (anyNA(media_metadata$new_timestamp)) {
+    stop("new_timestamp cannot contain NA values", call. = FALSE)
+  }
+
+  # Additional columns are not submitted
+  media_metadata <- media_metadata[, required_cols, drop = FALSE]
+
   if (chunksize > nrow(media_metadata)) {
-    message('chunksize is bigger than length of data altering chunksize to ', nrow(media_metadata))
-    chunksize <- nrow(media_metadata)
+    stop('chunksize is bigger than length of data', call. = FALSE)
   }
 
   spl.dt <- split(media_metadata, cut(seq_len(nrow(media_metadata)), round(nrow(media_metadata) / chunksize)))
-  for (i in seq_along(spl.dt)) {
 
+  pb <- cli::cli_progress_bar(
+    format = "Submitting {cli::pb_current}/{cli::pb_total} timestamp(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = nrow(media_metadata),
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
+  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # handler alone isn't enough.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
+  submitted <- 0
+  for (i in seq_along(spl.dt)) {
     send_media_chunks(hdr, spl.dt[[i]])
-    message('submitted ', i * chunksize, ' timestamps of ', nrow(media_metadata))
+    submitted <- submitted + nrow(spl.dt[[i]])
+    cli::cli_progress_update(id = pb, set = submitted)
   }
 }
 
@@ -229,7 +265,7 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 #' @seealso \link{correct_timestamps}
 #'
 #' @author
-#' Cristobal Salame
+#' Cristobal Salamé
 #' @keywords internal
 .correct_device_timestamps <- function(media_metadata) {
   n          <- nrow(media_metadata)
@@ -358,7 +394,7 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 #' \link{push_new_timestamps} to upload corrected timestamps to the platform
 #'
 #' @author
-#' Cristobal Salame
+#' Cristobal Salamé
 #' @export
 correct_timestamps <- function(file_path, device_id, timestamp, installation_timestamp, removal_timestamp) {
 

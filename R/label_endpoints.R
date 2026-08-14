@@ -139,7 +139,7 @@ getIUCNLabels <- function(hdr, offset, search_term = NULL) {
 #' }
 #'
 #' @author
-#' Adam Varley
+#' Adam Varley, Cristobal Salamé
 #' @export
 add_IUCN_labels <- function(hdr, labels, chunksize) {
 
@@ -159,6 +159,18 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
   }
 
 
+  pb <- cli::cli_progress_bar(
+    format = "Submitting {cli::pb_current}/{cli::pb_total} label(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = nrow(labels),
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
+  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # handler alone isn't enough.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
+  submitted <- 0
   for (i in seq_along(spl.dt)) {
 
     urlreq_ap <- httr2::req_url_path_append(hdr$root, "addIUCNLabels", hdr$key)
@@ -167,7 +179,8 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
     preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
     resp <- httr2::resp_body_json(preq)
 
-    message('submitted ', i * chunksize, ' labels of ', nrow(labels))
+    submitted <- submitted + nrow(spl.dt[[i]])
+    cli::cli_progress_update(id = pb, set = submitted)
   }
 
   return(resp)
@@ -205,7 +218,7 @@ send_updated_labels <- function(hdr, datachunk) {
 #' }
 #'
 #' @author
-#' Adam Varley
+#' Adam Varley, Cristobal Salamé
 #' @export
 push_new_labels <- function(hdr, submission_records, chunksize) {
 
@@ -215,10 +228,23 @@ push_new_labels <- function(hdr, submission_records, chunksize) {
   }
 
   spl.dt <- split(submission_records, cut(seq_len(nrow(submission_records)), round(nrow(submission_records) / chunksize)))
-  for (i in seq_along(spl.dt)) {
 
+  pb <- cli::cli_progress_bar(
+    format = "Submitting {cli::pb_current}/{cli::pb_total} label(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = nrow(submission_records),
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
+  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # handler alone isn't enough.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
+  submitted <- 0
+  for (i in seq_along(spl.dt)) {
     send_updated_labels(hdr, datachunk = spl.dt[[i]])
-    message('submitted ', i * chunksize, ' labels of ', nrow(submission_records))
+    submitted <- submitted + nrow(spl.dt[[i]])
+    cli::cli_progress_update(id = pb, set = submitted)
   }
 }
 
@@ -282,7 +308,7 @@ set_segment_blank_status <- function(hdr, blank_status, segment_record_ids) {
 #' }
 #'
 #' @author
-#' Adam Varley
+#' Adam Varley, Cristobal Salamé
 #' @export
 publish_segments <- function(hdr, publish_status, segment_record_ids, chunksize = 500) {
   status_str <- tolower(as.character(publish_status))
@@ -293,6 +319,18 @@ publish_segments <- function(hdr, publish_status, segment_record_ids, chunksize 
 
   chunks <- split(segment_record_ids, ceiling(seq_along(segment_record_ids) / chunksize))
 
+  pb <- cli::cli_progress_bar(
+    format = "Publishing {cli::pb_current}/{cli::pb_total} segment record(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
+    total  = length(segment_record_ids),
+    clear  = FALSE
+  )
+  # on.exit (not tryCatch) so the bar is always closed - including on a user
+  # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
+  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # handler alone isn't enough.
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
+  submitted <- 0
   for (i in seq_along(chunks)) {
     urlreq_ap <- httr2::req_url_path_append(hdr$root, "segmentRecordsPublishStatus", hdr$key, status_str) %>%
       httr2::req_method("PUT") %>%
@@ -301,7 +339,8 @@ publish_segments <- function(hdr, publish_status, segment_record_ids, chunksize 
     preq <- httr2::req_perform(urlreq_ap)
     resp <- httr2::resp_body_json(preq)
 
-    message('Chunk ', i, '/', length(chunks), ' (', length(chunks[[i]]), ' records) - ', resp$message)
+    submitted <- submitted + length(chunks[[i]])
+    cli::cli_progress_update(id = pb, set = submitted)
   }
 
   return(resp)
