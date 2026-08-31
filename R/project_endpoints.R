@@ -146,7 +146,7 @@ get_media_assets <- function(hdr,
   limit  <- API_MAX_LIMIT
 
   pb <- cli::cli_progress_bar(
-    format = "Fetching media assets {cli::pb_current}/{cli::pb_total} stations | {cli::pb_bar} {cli::pb_percent} | eta: {cli::pb_eta}",
+    format = "Fetching media assets {cli::pb_current}/{cli::pb_total} stations | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
     total  = length(psrID),
     clear  = FALSE
   )

@@ -87,5 +87,5 @@ status-gated pattern.
 
 }
 \author{
-Adam Varley
+Adam Varley, Cristobal Salamé
 }

@@ -32,5 +32,5 @@ Marks or unmarks segment records as published for a given list of segment record
 
 }
 \author{
-Adam Varley
+Adam Varley, Cristobal Salamé
 }

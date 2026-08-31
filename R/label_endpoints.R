@@ -191,26 +191,90 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
 
 send_updated_labels <- function(hdr, datachunk) {
 
-  datachunk <- jsonlite::toJSON(datachunk, pretty = TRUE)
-
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateSegmentLabels", hdr$key)
-  urlreq_ap <- urlreq_ap |> httr2::req_method("PUT") |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
-  preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
+  urlreq_ap <- urlreq_ap |>
+    httr2::req_method("PUT") |>
+    httr2::req_body_json(data = datachunk)
+  preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_string(preq)
 
   return(jsonlite::fromJSON(resp))
 }
 
+# Validate the subset of the API's Label schema used for new labels.
+.validate_label_submission <- function(submission_records) {
+  if (!is.data.frame(submission_records)) {
+    stop("`submission_records` must be a data frame or tibble.")
+  }
+
+  required <- c("segment_record_id_fk", "label_id_fk")
+  optional <- c(
+    "number_of_individuals",
+    "label_record_uuid",
+    "prediction_accuracy",
+    "label_created_at",
+    "label_record_id"
+  )
+  missing <- setdiff(required, names(submission_records))
+
+  if (length(missing) > 0L) {
+    problems <- paste0("missing required column(s): ", paste(missing, collapse = ", "))
+    stop(
+      "`submission_records` does not match the updateSegmentLabels schema (",
+      paste(problems, collapse = "; "),
+      "). Expected columns are: ",
+      paste(c(required, optional), collapse = ", "),
+      "."
+    )
+  }
+
+  is_integer_column <- function(x) {
+    is.numeric(x) &&
+      all(is.finite(x)) &&
+      all(x == floor(x))
+  }
+
+  integer_columns <- intersect(
+    c("segment_record_id_fk", "label_id_fk", "number_of_individuals", "label_record_id"),
+    names(submission_records)
+  )
+  for (column in integer_columns) {
+    values <- submission_records[[column]]
+    if (anyNA(values) || !is_integer_column(values)) {
+      stop(
+        "Column `", column, "` must contain non-missing whole numbers, as required by the updateSegmentLabels schema."
+      )
+    }
+  } 
+  invisible(submission_records)
+}
+
 #' @title Push new labels using a chunked process
 #'
 #' @description
-#' Push new labels to the platform in chunks.
+#' Push new labels to the platform in chunks. The endpoint expects a JSON
+#' array of label objects.
+#'
+#' Each row in \code{submission_records} must contain
+#' \code{segment_record_id_fk} and \code{label_id_fk}. The optional columns
+#' supported by the endpoint are \code{number_of_individuals},
+#' \code{label_record_uuid}, \code{prediction_accuracy},
+#' \code{label_created_at}, and \code{label_record_id}. Extra columns are
+#' rejected before any request is made.
 #'
 #' @param hdr A base URL provided and valid API key returned by the function \link{auth_headers}
-#' @param submission_records A tibble containing the records to be submitted
-#' @param chunksize An integer specifying the chunk size for the submission
+#' @param submission_records A data frame or tibble with one row per label.
+#'   Required columns are \code{segment_record_id_fk} (integer) and
+#'   \code{label_id_fk} (integer). Optional columns are
+#'   \code{number_of_individuals} (integer, default 1),
+#'   \code{label_record_uuid} (character), \code{prediction_accuracy}
+#'   (numeric), \code{label_created_at} (date-time), and
+#'   \code{label_record_id} (integer).
+#' @param chunksize A positive whole number specifying the maximum number of
+#'   records sent per request.
 #'
-#' @return A list containing tabular data and pagination information for iterative calls
+#' @return The API response from the final chunk, typically a list containing
+#'   the message \code{"Labels updated successfully"}.
 #'
 #' @examples
 #' \dontrun{
@@ -222,12 +286,17 @@ send_updated_labels <- function(hdr, datachunk) {
 #' @export
 push_new_labels <- function(hdr, submission_records, chunksize) {
 
+  .validate_label_submission(submission_records)
+
   if (chunksize > nrow(submission_records)) {
     message('chunksize is bigger than length of data altering chunksize to ', nrow(submission_records))
     chunksize <- nrow(submission_records)
   }
 
-  spl.dt <- split(submission_records, cut(seq_len(nrow(submission_records)), round(nrow(submission_records) / chunksize)))
+  spl.dt <- split(
+    submission_records,
+    ceiling(seq_len(nrow(submission_records)) / chunksize)
+  )
 
   pb <- cli::cli_progress_bar(
     format = "Submitting {cli::pb_current}/{cli::pb_total} label(s) | {cli::pb_bar} {cli::pb_percent} | ETA: {cli::pb_eta}",
@@ -241,11 +310,14 @@ push_new_labels <- function(hdr, submission_records, chunksize) {
   on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 
   submitted <- 0
+  resp <- NULL
   for (i in seq_along(spl.dt)) {
-    send_updated_labels(hdr, datachunk = spl.dt[[i]])
+    resp <- send_updated_labels(hdr, datachunk = spl.dt[[i]])
     submitted <- submitted + nrow(spl.dt[[i]])
     cli::cli_progress_update(id = pb, set = submitted)
   }
+
+  return(resp)
 }
 
 

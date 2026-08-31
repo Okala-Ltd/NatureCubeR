@@ -8,14 +8,14 @@
 }
 \arguments{
 \item{media_metadata}{A data frame for a single device, sorted by
-\code{file_path}, containing at minimum the columns \code{timestamp}
+\code{file_name}, containing at minimum the columns \code{timestamp}
 (POSIXct), \code{installation_timestamp} (POSIXct or Date), and
 \code{is_outlier} (logical).}
 }
 \value{
 The input data frame with two additional columns:
   \itemize{
-    \item \strong{corrected_timestamp}: POSIXct. The corrected timestamp.
+    \item \strong{new_timestamp}: POSIXct. The corrected timestamp.
     \item \strong{correction_type}: Character. One of \code{"none"},
       \code{"initial_run"}, \code{"mid_deployment_first"}, or
       \code{"mid_deployment_chain"}.
@@ -23,7 +23,7 @@ The input data frame with two additional columns:
 }
 \description{
 Internal helper called by \link{correct_timestamps}. Chains corrected
-timestamps row-by-row for one device (pre-sorted by \code{file_path}, with
+timestamps row-by-row for one device (pre-sorted by \code{file_name}, with
 \code{is_outlier} already computed): good files keep their timestamp, a bad
 first file is anchored to \code{installation_timestamp}, and each
 subsequent bad run is anchored to the last good time (+1 minute) then
@@ -33,6 +33,6 @@ offset by the original inter-file gaps.
 \link{correct_timestamps}
 }
 \author{
-Cristobal Salame
+Cristobal Salamé
 }
 \keyword{internal}

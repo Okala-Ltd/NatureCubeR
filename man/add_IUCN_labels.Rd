@@ -26,5 +26,5 @@ Add labels from the wider IUCN database in chunks.
 
 }
 \author{
-Adam Varley
+Adam Varley, Cristobal Salamé
 }

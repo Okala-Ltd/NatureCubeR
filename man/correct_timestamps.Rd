@@ -4,42 +4,38 @@
 \alias{correct_timestamps}
 \title{Correct camera trap timestamps}
 \usage{
-correct_timestamps(
-  file_path,
-  device_id,
-  timestamp,
-  installation_timestamp,
-  removal_timestamp
-)
+correct_timestamps(media_metadata)
 }
 \arguments{
-\item{file_path}{Character vector. Full file paths of the media files, used
-to sort files in chronological order within each device.}
-
-\item{device_id}{Character vector. Unique camera identifier for each file.}
-
-\item{timestamp}{POSIXct vector. Timestamps read from the files' EXIF
-metadata. Non-POSIXct input is coerced via \link[lubridate]{as_datetime}.}
-
-\item{installation_timestamp}{Date, POSIXct, or character vector giving the
-date/time the camera was deployed in the field (typically one repeated
-value per device). Always parsed via
-\code{lubridate::ymd_hms(truncated = 3)}, so a date with no time
-component (e.g. \code{"2024-01-15"} or a bare \code{Date}) defaults to
-midnight.}
-
-\item{removal_timestamp}{Date, POSIXct, or character vector giving the
-date/time the camera was removed from the field. Parsed the same way as
-\code{installation_timestamp}.}
+\item{media_metadata}{A data frame or tibble containing, at minimum, the
+following columns:
+\itemize{
+  \item \strong{file_name}: Character. File name of each media file,
+        used to sort files in chronological order within each device.
+        Must be unique within each \code{device_id}; the function stops
+        with an error if any duplicates are found.
+  \item \strong{device_id}: Character. Unique camera identifier for each
+        file.
+  \item \strong{timestamp}: POSIXct, or character/Date coercible via
+        \link[lubridate]{as_datetime}. Timestamp read from the file's
+        EXIF metadata.
+  \item \strong{installation_timestamp}: POSIXct, or character/Date
+        coercible via \link[lubridate]{as_datetime}, giving the
+        date/time the camera was deployed in the field (typically one
+        repeated value per device).
+  \item \strong{removal_timestamp}: POSIXct, or character/Date coercible
+        via \link[lubridate]{as_datetime}, giving the date/time the
+        camera was removed from the field.
+}}
 }
 \value{
-A tibble with the input columns (\code{file_path}, \code{device_id},
+A tibble with the input columns (\code{file_name}, \code{device_id},
   \code{timestamp}, \code{installation_timestamp}, \code{removal_timestamp})
   and three additional columns produced by the function:
   \itemize{
     \item \strong{is_outlier}: Logical. \code{TRUE} for files whose
           timestamp was identified as incorrect.
-    \item \strong{corrected_timestamp}: POSIXct. The corrected timestamp.
+    \item \strong{new_timestamp}: POSIXct. The corrected timestamp.
           Equals \code{timestamp} for non-outlier files.
     \item \strong{correction_type}: Character. One of:
       \describe{
@@ -75,23 +71,17 @@ is flagged if its \code{timestamp} falls more than 48 hours before
   cam_data <- read_csv("cam_timestamp.csv") \%>\%
     left_join(deployments, by = "device_id")
 
-  corrected <- correct_timestamps(
-    file_path              = cam_data$file_path,
-    device_id              = cam_data$device_id,
-    timestamp              = cam_data$timestamp,
-    installation_timestamp = cam_data$installation_timestamp,
-    removal_timestamp      = cam_data$removal_timestamp
-  )
+  corrected <- correct_timestamps(cam_data)
 
   # Inspect corrections
   corrected \%>\%
     filter(is_outlier) \%>\%
-    select(device_id, file_path, corrected_timestamp, correction_type)
+    select(device_id, file_name, new_timestamp, correction_type)
 
   # Prepare for platform upload
   to_upload <- corrected \%>\%
     filter(is_outlier) \%>\%
-    mutate(new_timestamp = format(corrected_timestamp, "\%Y-\%m-\%dT\%H:\%M:\%S")) \%>\%
+    mutate(new_timestamp = format(new_timestamp, "\%Y-\%m-\%dT\%H:\%M:\%S")) \%>\%
     select(media_file_record_id, new_timestamp)
 
   push_new_timestamps(headers, to_upload, chunksize = 100)
@@ -102,5 +92,5 @@ is flagged if its \code{timestamp} falls more than 48 hours before
 \link{push_new_timestamps} to upload corrected timestamps to the platform
 }
 \author{
-Cristobal Salame
+Cristobal Salamé
 }
