@@ -9,15 +9,31 @@ push_new_labels(hdr, submission_records, chunksize)
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}}
 
-\item{submission_records}{A tibble containing the records to be submitted}
+\item{submission_records}{A data frame or tibble with one row per label.
+Required columns are \code{segment_record_id_fk} (integer) and
+\code{label_id_fk} (integer). Optional columns are
+\code{number_of_individuals} (integer, default 1),
+\code{label_record_uuid} (character), \code{prediction_accuracy}
+(numeric), \code{label_created_at} (date-time), and
+\code{label_record_id} (integer).}
 
-\item{chunksize}{An integer specifying the chunk size for the submission}
+\item{chunksize}{A positive whole number specifying the maximum number of
+records sent per request.}
 }
 \value{
-A list containing tabular data and pagination information for iterative calls
+The API response from the final chunk, typically a list containing the
+message \code{"Labels updated successfully"}.
 }
 \description{
-Push new labels to the platform in chunks.
+Push new labels to the platform in chunks. The endpoint expects a JSON
+array of label objects.
+
+Each row in \code{submission_records} must contain
+\code{segment_record_id_fk} and \code{label_id_fk}. The optional columns
+supported by the endpoint are \code{number_of_individuals},
+\code{label_record_uuid}, \code{prediction_accuracy},
+\code{label_created_at}, and \code{label_record_id}. Extra columns are
+rejected before any request is made.
 }
 \examples{
 \dontrun{
