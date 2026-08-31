@@ -20,4 +20,7 @@ A list of file descriptors with \code{filename}, \code{blob_path},
 Calls \code{POST /getFieldMediaUploadUrls/{api_key}} and returns
 signed PUT URLs for direct-to-GCS uploads.
 }
+\author{
+Cristobal Salamé
+}
 \keyword{internal}

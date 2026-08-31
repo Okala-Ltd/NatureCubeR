@@ -4,7 +4,7 @@
 \alias{push_new_timestamps}
 \title{Push new timestamps to the platform in chunks}
 \usage{
-push_new_timestamps(hdr, media_metadata, chunksize)
+push_new_timestamps(hdr, media_metadata, chunksize = 100)
 }
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the
@@ -15,23 +15,36 @@ Must contain the following columns:
 \itemize{
   \item \strong{media_file_record_id} (required): Numeric. The unique identifier
         of the media file record to update.
-  \item \strong{new_timestamp} (required): Character. The new timestamp in
-        ISO 8601 format (e.g., "2024-01-15T10:30:00" or "2024-01-15 10:30:00").
+  \item \strong{new_timestamp} (required): Character in ISO 8601 format
+        (e.g. "2024-01-15T10:30:00", "2024-01-15T10:30:00Z" or
+        "2024-01-15T10:30:00+01:00"). A space separator is accepted in
+        place of the "T", and POSIXct/Date values (such as the
+        \code{new_timestamp} column returned by \link{correct_timestamps})
+        are formatted automatically.
 }
 Additional columns will be ignored during submission.}
 
 \item{chunksize}{An integer specifying the number of records to submit per
-chunk. Recommended values: 50-200 depending on network conditions. If
-chunksize exceeds the number of rows, it will be automatically adjusted.}
+chunk. Recommended values: 50-200 depending on network conditions.
+Defaults to 100. If chunksize exceeds the number of rows, it is
+automatically reduced to the number of rows.}
 }
 \value{
-No explicit return value. Progress messages are displayed for each
-  chunk submitted.
+Invisibly, a list with one parsed API response per chunk. A
+  progress bar tracks records submitted across all chunks.
 }
 \description{
 Updates timestamps for many media records by splitting them into chunks,
 avoiding timeouts on large datasets. For small datasets, use
 \link{update_media_timestamps} directly.
+}
+\details{
+The whole input is validated before anything is sent, so bad data fails
+immediately rather than after part of the dataset has already been
+updated. Chunks are applied by the platform as they are sent and there is
+no rollback: if a chunk fails, the error reports which records had already
+been submitted successfully, and re-running the full push is safe because
+re-sending an unchanged timestamp is a no-op.
 }
 \examples{
 \dontrun{
@@ -66,5 +79,5 @@ avoiding timeouts on large datasets. For small datasets, use
 \link{update_media_timestamps} for direct submission without chunking
 }
 \author{
-Adam Varley
+Adam Varley, Cristobal Salamé
 }

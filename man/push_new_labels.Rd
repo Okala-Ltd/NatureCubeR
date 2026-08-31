@@ -26,5 +26,5 @@ Push new labels to the platform in chunks.
 
 }
 \author{
-Adam Varley
+Adam Varley, Cristobal Salamé
 }

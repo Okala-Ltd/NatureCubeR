@@ -15,8 +15,11 @@ Must contain the following columns:
 \itemize{
   \item \strong{media_file_record_id} (required): Numeric. The unique identifier
         of the media file record to update.
-  \item \strong{new_timestamp} (required): Character. The new timestamp in
-        ISO 8601 format (e.g., "2024-01-15T10:30:00" or "2024-01-15 10:30:00").
+  \item \strong{new_timestamp} (required): Character in ISO 8601 format
+        (e.g. "2024-01-15T10:30:00", "2024-01-15T10:30:00Z" or
+        "2024-01-15T10:30:00+01:00"). A space separator is accepted in
+        place of the "T", and POSIXct/Date values are formatted
+        automatically.
 }
 Additional columns will be ignored.}
 }
