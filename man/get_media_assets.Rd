@@ -33,6 +33,9 @@ get slow enough deep into pagination to trip a server-side timeout,
 returned as an HTTP 500. Querying one station at a time keeps each request
 fast and avoids that failure mode, so callers do not need to chunk
 \code{psrID} themselves.
+
+Pagination continues until the API returns an empty page. This avoids
+dropping records if the API returns a short page before the final page.
 }
 \examples{
 \dontrun{

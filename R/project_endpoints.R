@@ -120,6 +120,9 @@ plot_stations <- function(geojson_response) {
 #' fast and avoids that failure mode, so callers do not need to chunk
 #' \code{psrID} themselves.
 #'
+#' Pagination continues until the API returns an empty page. This avoids
+#' dropping records if the API returns a short page before the final page.
+#'
 #' @param hdr A base URL provided and valid API key returned by the
 #'   function \link{auth_headers}
 #' @param datatype A character vector of data types
@@ -170,12 +173,11 @@ get_media_assets <- function(hdr,
         jsonlite::fromJSON()
 
       batch <- tibble::as_tibble(resp)
+      if (nrow(batch) == 0L) break
+
       all_results[[length(all_results) + 1]] <- batch
       offset <- offset + nrow(batch)
-
       Sys.sleep(0.5)
-
-      if (nrow(batch) < limit) break
     }
     cli::cli_progress_update(id = pb, inc = 1)
   }
