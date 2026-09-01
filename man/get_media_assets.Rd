@@ -4,7 +4,12 @@
 \alias{get_media_assets}
 \title{Retrieve media assets for a given project system record ID}
 \usage{
-get_media_assets(hdr, datatype = c("video", "audio", "image", "eDNA"), psrID)
+get_media_assets(
+  hdr,
+  datatype = c("video", "audio", "image", "eDNA"),
+  psrID,
+  max_workers = MEDIA_MAX_WORKERS
+)
 }
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the
@@ -15,27 +20,24 @@ c("video","audio","image","eDNA")}
 
 \item{psrID}{A numeric vector of project system record IDs (as found in
 \code{stations$project_system_record_id}). Safe to pass every station in
-a project - they are fetched one at a time internally.}
+a project.}
+
+\item{max_workers}{Maximum number of stations to fetch concurrently.
+Defaults to \code{3}. Set to \code{1} for sequential downloads.}
 }
 \value{
 A tibble of media assets for the specified project system record
 }
 \description{
-Get all of the station data associated with your project.
-For data types c("video","audio","image")
+Get all media assets associated with your project for data types
+c("video","audio","image").
 
-Internally, each project system record ID is queried separately (its own
-paginated request), even if \code{psrID} holds many IDs. Batching many IDs
-into a single request was found to make the server's response time scale
-with the number of IDs in the batch (roughly +1.5s per extra station in
-testing) - large batches (e.g. an entire project's stations at once) can
-get slow enough deep into pagination to trip a server-side timeout,
-returned as an HTTP 500. Querying one station at a time keeps each request
-fast and avoids that failure mode, so callers do not need to chunk
-\code{psrID} themselves.
+Each project system record ID is queried separately. Up to three stations are
+fetched concurrently (the API rate-limits higher concurrency with HTTP 429).
 
-Pagination continues until the API returns an empty page. This avoids
-dropping records if the API returns a short page before the final page.
+Pagination prefers keyset cursors via \code{after_segment_record_id} when
+the backend supports them, falling back to offset pagination. An empty page
+ends pagination for that station.
 }
 \examples{
 \dontrun{
