@@ -226,7 +226,7 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
   )
   # on.exit (not tryCatch) so the bar is always closed - including on a user
   # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
-  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # push_phone_observations.R for the same pattern and why tryCatch's `error`
   # handler alone isn't enough.
   on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 

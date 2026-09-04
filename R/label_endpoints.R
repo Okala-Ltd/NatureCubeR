@@ -166,7 +166,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
   )
   # on.exit (not tryCatch) so the bar is always closed - including on a user
   # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
-  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # push_phone_observations.R for the same pattern and why tryCatch's `error`
   # handler alone isn't enough.
   on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 
@@ -305,7 +305,7 @@ push_new_labels <- function(hdr, submission_records, chunksize) {
   )
   # on.exit (not tryCatch) so the bar is always closed - including on a user
   # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
-  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # push_phone_observations.R for the same pattern and why tryCatch's `error`
   # handler alone isn't enough.
   on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 
@@ -398,7 +398,7 @@ publish_segments <- function(hdr, publish_status, segment_record_ids, chunksize 
   )
   # on.exit (not tryCatch) so the bar is always closed - including on a user
   # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
-  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # push_phone_observations.R for the same pattern and why tryCatch's `error`
   # handler alone isn't enough.
   on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 
