@@ -4,7 +4,7 @@
 \alias{get_phone_observations}
 \title{Download phone observations for a procedure}
 \usage{
-get_phone_observations(hdr, procedure, data_type, dest_dir = getwd())
+get_phone_observations(hdr, procedure, data_type = NULL, dest_dir = NULL)
 }
 \arguments{
 \item{hdr}{Auth headers from \link{auth_headers} or \link{auth_headers_dev}.
@@ -14,19 +14,20 @@ SIT must be used until this endpoint is on production
 \item{procedure}{Named list returned by \link{get_procedure}. Must include
 \code{project_id} and \code{procedure_id}.}
 
-\item{data_type}{Character. One or more of \code{phone-photo},
+\item{data_type}{Optional character. One or more of \code{phone-photo},
 \code{phone-video}, \code{phone-audio}, \code{choice}, \code{text},
-\code{numeric}, \code{label}.}
+\code{numeric}, \code{label}. When \code{NULL} (default), every type is
+downloaded.}
 
-\item{dest_dir}{Directory for extracted media ZIP contents. Defaults to
-the current working directory. Existing names are never overwritten;
-a timestamped directory is created instead.}
+\item{dest_dir}{Optional directory for extracted media ZIP contents. When
+\code{NULL} (default), uses the current working directory. Existing names
+are never overwritten; a timestamped directory is created instead.}
 }
 \value{
 If a single \code{data_type} is requested, a tibble (non-media)
-or a named list with \code{observations}, \code{dest_dir}, \code{files},
-and export metadata (media). If several types are requested, a named
-list of those results.
+  or a named list with \code{observations}, \code{dest_dir}, \code{files},
+  and export metadata (media). If several types are requested (including
+  the all-types default), a named list of those results.
 }
 \description{
 Downloads observations for a procedure from
@@ -40,10 +41,24 @@ export descriptor; this function then calls
 extracts the ZIP into a uniquely named directory under \code{dest_dir},
 and reads \code{observations.csv}.
 
-\code{data_type} may be one type or several. Multiple types are fetched
-sequentially (the media ZIP build is server-side and slow; parallel
-requests tend to 429). Pass several types in one call when you want a
-single workflow; pass one type at a time to inspect timing.
+Returned observations (and the rewritten on-disk \code{observations.csv})
+drop identifiers/device noise (\code{project_id}, \code{project_system_id},
+\code{procedure_id}, \code{observation_id}, \code{item_uuid},
+\code{phone_model}, \code{phone_operating_system}); rename
+\code{system_name}/\code{procedure_name} lead columns
+(\code{procedure_name} becomes \code{survey_name}),
+\code{recorded_at} to \code{observation_recording_timestamp} (other
+timestamp columns dropped), \code{data} to \code{survey_observation}, and
+\code{username} to \code{surveyor_name} (last column). Coordinate columns
+are left unchanged. When any \code{labels} JSON is present it is expanded
+into taxonomy/prediction columns (\code{class}, \code{order}, ...) after
+\code{survey_observation}; otherwise those columns are omitted. All
+\code{*_uuid} columns are grouped before \code{surveyor_name}.
+
+\code{data_type} may be omitted (download every type), one type, or several.
+Multiple types are fetched sequentially (the media ZIP build is server-side
+and slow; parallel requests tend to 429). Pass several types in one call
+when you want a single workflow; pass one type at a time to inspect timing.
 }
 \examples{
 \dontrun{
@@ -53,11 +68,13 @@ single workflow; pass one type at a time to inspect timing.
     system_name = "Plante Ivindo",
     procedure_name = "Arbre")
 
+  all_obs <- get_phone_observations(hdr, procedure)
   text_obs <- get_phone_observations(hdr, procedure, data_type = "text")
   photos <- get_phone_observations(hdr, procedure, data_type = "phone-photo")
   mixed <- get_phone_observations(
     hdr, procedure,
-    data_type = c("text", "phone-photo")
+    data_type = c("text", "phone-photo"),
+    dest_dir = tempdir()
   )
 }
 

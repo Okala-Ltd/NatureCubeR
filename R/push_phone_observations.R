@@ -7,7 +7,7 @@
 # status and response body so the API's own error message is visible instead
 # of a generic httr2 error.
 .perform_or_stop <- function(req) {
-  resp   <- httr2::req_perform(req |> httr2::req_error(is_error = \(r) FALSE))
+  resp   <- httr2::req_perform(req %>% httr2::req_error(is_error = \(r) FALSE))
   status <- httr2::resp_status(resp)
   if (status >= 400) {
     body <- tryCatch(httr2::resp_body_string(resp), error = function(e) "<no response body>")
@@ -60,8 +60,8 @@ get_field_media_upload_urls <- function(hdr, files) {
       "getFieldMediaUploadUrls",
       hdr$key
     )
-    urlreq <- urlreq |>
-      httr2::req_method("POST") |>
+    urlreq <- urlreq %>%
+      httr2::req_method("POST") %>%
       httr2::req_body_json(list(files = unname(batch)))
 
     response <- httr2::req_perform(urlreq)
@@ -688,8 +688,8 @@ upload_observations <- function(hdr, observations, dry_run = FALSE) {
 
   for (start in seq(1L, n, by = batch_size)) {
     end   <- min(start + batch_size - 1L, n)
-    urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) |>
-      httr2::req_method("POST") |>
+    urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) %>%
+      httr2::req_method("POST") %>%
       httr2::req_body_json(list(observations = observations[start:end]), auto_unbox = TRUE)
     responses <- c(responses, httr2::resp_body_json(.perform_or_stop(urlreq)))
     cli::cli_progress_update(id = pb, set = end)

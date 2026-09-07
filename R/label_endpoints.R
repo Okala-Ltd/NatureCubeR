@@ -56,7 +56,7 @@ add_project_labels <- function(hdr,
                                labeltype = c('Bioacoustic', 'Camera'),
                                labels) {
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "addProjectLabels", labeltype, hdr$key)
-  urlreq_ap <- urlreq_ap |> httr2::req_method("POST") |> httr2::req_body_json(data = labels)
+  urlreq_ap <- urlreq_ap %>% httr2::req_method("POST") %>% httr2::req_body_json(data = labels)
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_json(preq)
 
@@ -99,9 +99,9 @@ getIUCNLabels <- function(hdr, offset, search_term = NULL) {
   limit = API_MAX_LIMIT
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "getIUCNLabels", hdr$key)
-  urlreq_ap <- urlreq_ap |>
-    httr2::req_method("GET") |>
-    httr2::req_url_query("offset" = offset, "limit" = limit, "search_term" = search_term) |>
+  urlreq_ap <- urlreq_ap %>%
+    httr2::req_method("GET") %>%
+    httr2::req_url_query("offset" = offset, "limit" = limit, "search_term" = search_term) %>%
     httr2::req_retry(
       max_tries = 5,
       is_transient = \(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
@@ -174,7 +174,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
   for (i in seq_along(spl.dt)) {
 
     urlreq_ap <- httr2::req_url_path_append(hdr$root, "addIUCNLabels", hdr$key)
-    urlreq_ap <- urlreq_ap |> httr2::req_method("POST") |> httr2::req_body_json(data = spl.dt[[i]])
+    urlreq_ap <- urlreq_ap %>% httr2::req_method("POST") %>% httr2::req_body_json(data = spl.dt[[i]])
 
     preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
     resp <- httr2::resp_body_json(preq)
@@ -192,8 +192,8 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
 send_updated_labels <- function(hdr, datachunk) {
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateSegmentLabels", hdr$key)
-  urlreq_ap <- urlreq_ap |>
-    httr2::req_method("PUT") |>
+  urlreq_ap <- urlreq_ap %>%
+    httr2::req_method("PUT") %>%
     httr2::req_body_json(data = datachunk)
   preq <- httr2::req_perform(urlreq_ap)
   resp <- httr2::resp_body_string(preq)

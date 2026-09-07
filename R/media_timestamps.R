@@ -3,7 +3,7 @@ send_media_chunks <- function(hdr, datachunk) {
   datachunk <- jsonlite::toJSON(datachunk, pretty = TRUE)
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateTimestamps", hdr$key)
-  urlreq_ap <- urlreq_ap |> httr2::req_method("PUT") |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
+  urlreq_ap <- urlreq_ap %>% httr2::req_method("PUT") %>% httr2::req_body_json(jsonlite::fromJSON(datachunk))
   preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
   resp <- httr2::resp_body_string(preq)
 

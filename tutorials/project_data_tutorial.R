@@ -65,7 +65,7 @@ iucn_results <- getIUCNLabels(
 
 # --- 5c. Add new IUCN species to the project --------------------------------
 # Prepare a data frame with the required IUCN columns, then upload in chunks.
-# example_data <- readLines("path/to/species.json") |> jsonlite::fromJSON()
+# example_data <- readLines("path/to/species.json") %>% jsonlite::fromJSON()
 # example_data$extant_country_list <- NA
 # add_IUCN_labels(hdr = hdr, labels = example_data, chunksize = 500)
 
