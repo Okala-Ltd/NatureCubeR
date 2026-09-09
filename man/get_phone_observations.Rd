@@ -35,13 +35,18 @@ If a single \code{data_type} is requested, a tibble (non-media)
 Downloads observations for a procedure from
 \code{GET /getPhoneObservations/{api_key}/{project_id}/{procedure_id}/{data_type}}.
 
+Large exports are fetched in pages of up to 1000 rows (\code{limit}/
+\code{offset}, preferring \code{after_observation_id} keyset cursors when the
+API returns \code{X-Next-Observation-Id}). Pages are combined automatically
+so callers still receive one tibble / export folder.
+
 Non-media types (\code{choice}, \code{text}, \code{numeric}, \code{label})
 stream a CSV that is returned as a tibble. Media types
 (\code{phone-photo}, \code{phone-video}, \code{phone-audio}) return a JSON
-export descriptor; this function then calls
+export descriptor per page; this function then calls
 \link{download_phone_observation_export}, follows the redirect to GCS,
-extracts the ZIP into a timestamped folder under \code{dest_dir}, reads
-\code{observations.csv}, writes \code{observations.xlsx} and
+extracts each ZIP, merges rows and media into a timestamped folder under
+\code{dest_dir}, writes \code{observations.xlsx} and
 \code{observations.gpkg} at that folder root, and rearranges media into
 \code{survey_name/procedure_name/feature_id/} beside those files.
 
