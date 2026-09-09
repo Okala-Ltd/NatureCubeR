@@ -19,15 +19,17 @@ SIT must be used until this endpoint is on production
 \code{numeric}, \code{label}. When \code{NULL} (default), every type is
 downloaded.}
 
-\item{dest_dir}{Optional directory for extracted media ZIP contents. When
-\code{NULL} (default), uses the current working directory. Existing names
-are never overwritten; a timestamped directory is created instead.}
+\item{dest_dir}{Optional parent directory for the timestamped export folder.
+When \code{NULL} (default), uses the current working directory. Each media
+download creates a new \code{phone-obs-...} folder that is never
+overwritten.}
 }
 \value{
 If a single \code{data_type} is requested, a tibble (non-media)
-  or a named list with \code{observations}, \code{dest_dir}, \code{files},
-  and export metadata (media). If several types are requested (including
-  the all-types default), a named list of those results.
+  or a named list with \code{observations}, \code{dest_dir},
+  \code{excel_path}, \code{geopackage_path}, \code{files}, and export
+  metadata (media). If several types are requested (including the all-types
+  default), a named list of those results.
 }
 \description{
 Downloads observations for a procedure from
@@ -38,22 +40,35 @@ stream a CSV that is returned as a tibble. Media types
 (\code{phone-photo}, \code{phone-video}, \code{phone-audio}) return a JSON
 export descriptor; this function then calls
 \link{download_phone_observation_export}, follows the redirect to GCS,
-extracts the ZIP into a uniquely named directory under \code{dest_dir},
-and reads \code{observations.csv}.
+extracts the ZIP into a timestamped folder under \code{dest_dir}, reads
+\code{observations.csv}, writes \code{observations.xlsx} and
+\code{observations.gpkg} at that folder root, and rearranges media into
+\code{survey_name/procedure_name/feature_id/} beside those files.
 
-Returned observations (and the rewritten on-disk \code{observations.csv})
+The workbook has three sheets: a column guide, one wide-format row per
+feature, and long-format observations linked by a client-friendly
+\code{feature_id} such as \code{f001}. Wide-format survey-item
+columns use the exact \code{item_name}; repeated observations for the same
+feature and item are stored as a JSON array. The GeoPackage contains a
+spatial \code{parent_features} layer and a related non-spatial \code{data}
+table linked by \code{feature_id}.
+
+Returned observations (and the workbook data)
 drop identifiers/device noise (\code{project_id}, \code{project_system_id},
 \code{procedure_id}, \code{observation_id}, \code{item_uuid},
-\code{phone_model}, \code{phone_operating_system}); rename
-\code{system_name}/\code{procedure_name} lead columns
-(\code{procedure_name} becomes \code{survey_name}),
+\code{observation_uuid}, \code{phone_model},
+\code{phone_operating_system}); rename \code{system_name} to
+\code{survey_name} and keep \code{procedure_name};
 \code{recorded_at} to \code{observation_recording_timestamp} (other
 timestamp columns dropped), \code{data} to \code{survey_observation}, and
-\code{username} to \code{surveyor_name} (last column). Coordinate columns
-are left unchanged. When any \code{labels} JSON is present it is expanded
-into taxonomy/prediction columns (\code{class}, \code{order}, ...) after
-\code{survey_observation}; otherwise those columns are omitted. All
-\code{*_uuid} columns are grouped before \code{surveyor_name}.
+\code{username} to \code{surveyor_name} (last column). Raw
+\code{longitude}/\code{latitude} are replaced by coordinates parsed from
+the feature-level \code{feature_geometry}. When any \code{labels} JSON is
+present it is expanded into taxonomy/prediction columns (\code{class},
+\code{order}, ...) after \code{survey_observation}; otherwise those columns
+are omitted. The internal \code{feature_uuid} is replaced by
+\code{feature_id}. Media observations use the relative path
+\code{survey_name/procedure_name/feature_id/file_name}.
 
 \code{data_type} may be omitted (download every type), one type, or several.
 Multiple types are fetched sequentially (the media ZIP build is server-side

@@ -70,7 +70,8 @@
 .sanitize_dir_token <- function(x) {
   x <- gsub("[^A-Za-z0-9._-]+", "-", as.character(x))
   x <- gsub("^-+|-+$", "", x)
-  if (!nzchar(x)) "export" else x
+  x[!nzchar(x) | is.na(x)] <- "export"
+  x
 }
 
 .unique_export_dir <- function(dest_dir, procedure_id, data_type) {
@@ -139,8 +140,11 @@
   "phone_model",
   "phone_operating_system",
   "item_uuid",
-  "observation_id"
+  "observation_id",
+  "observation_uuid"
 )
+
+.PHONE_OBS_COORD_COLS <- c("longitude", "latitude")
 
 .has_phone_obs_label_data <- function(labels) {
   if (is.null(labels) || length(labels) == 0L) {
@@ -227,9 +231,62 @@
   out
 }
 
+# Parse the feature-level WKT geometry. Raw longitude/latitude fields describe
+# individual observations and are intentionally replaced by these coordinates.
+.phone_obs_feature_coordinates <- function(feature_geometry) {
+  n <- length(feature_geometry)
+  coordinates <- tibble::tibble(
+    longitude = rep(NA_real_, n),
+    latitude = rep(NA_real_, n)
+  )
+  if (n == 0L) {
+    return(coordinates)
+  }
+
+  geometry <- as.character(feature_geometry)
+  pattern <- paste0(
+    "(?i)^\\s*POINT\\s*\\(\\s*",
+    "([+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?)",
+    "\\s+",
+    "([+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?)",
+    "\\s*\\)\\s*$"
+  )
+  for (i in seq_len(n)) {
+    if (is.na(geometry[[i]]) || !nzchar(geometry[[i]])) {
+      next
+    }
+    matched <- regmatches(
+      geometry[[i]],
+      regexec(pattern, geometry[[i]], perl = TRUE)
+    )[[1]]
+    if (length(matched) == 3L) {
+      coordinates$longitude[[i]] <- as.numeric(matched[[2]])
+      coordinates$latitude[[i]] <- as.numeric(matched[[3]])
+    }
+  }
+  coordinates
+}
+
+.phone_obs_feature_ids <- function(feature_uuid) {
+  feature_uuid <- as.character(feature_uuid)
+  unique_uuid <- unique(feature_uuid[!is.na(feature_uuid) & nzchar(feature_uuid)])
+  missing <- is.na(feature_uuid) | !nzchar(feature_uuid)
+  feature_count <- length(unique_uuid) + sum(missing)
+  width <- max(3L, nchar(as.character(feature_count)))
+  ids <- stats::setNames(
+    sprintf(paste0("f%0", width, "d"), seq_along(unique_uuid)),
+    unique_uuid
+  )
+  result <- unname(ids[feature_uuid])
+  if (any(missing)) {
+    missing_ids <- seq.int(length(unique_uuid) + 1L, feature_count)
+    result[missing] <- sprintf(paste0("f%0", width, "d"), missing_ids)
+  }
+  result
+}
+
 # Drop noise columns, expand labels when present, rename client-facing fields,
-# keep a single recording timestamp, and put surveyor / *_uuid columns last.
-# Coordinate columns are left as returned by the API.
+# derive feature coordinates/IDs, and put surveyor / observation UUIDs last.
 .tidy_phone_observations <- function(df) {
   if (!is.data.frame(df) || ncol(df) == 0L) {
     return(tibble::as_tibble(df))
@@ -242,21 +299,28 @@
   }
 
   label_src <- if ("labels" %in% names(df)) df$labels else NULL
-  add_tax <- .has_phone_obs_label_data(label_src)
+  existing_tax <- intersect(c(.PHONE_OBS_LABEL_COLS, "class_"), names(df))
+  add_tax <- .has_phone_obs_label_data(label_src) ||
+    (length(existing_tax) > 0L && any(vapply(
+      df[existing_tax],
+      function(x) any(!is.na(x) & nzchar(as.character(x))),
+      logical(1)
+    )))
   if ("labels" %in% names(df)) {
     df$labels <- NULL
   }
-  for (nm in c(.PHONE_OBS_LABEL_COLS, "class_")) {
-    if (nm %in% names(df)) {
-      df[[nm]] <- NULL
+  if (.has_phone_obs_label_data(label_src)) {
+    for (nm in c(.PHONE_OBS_LABEL_COLS, "class_")) {
+      if (nm %in% names(df)) {
+        df[[nm]] <- NULL
+      }
     }
-  }
-  if (add_tax) {
     df <- dplyr::bind_cols(df, .expand_phone_obs_labels(label_src))
+  } else if ("class_" %in% names(df)) {
+    names(df)[names(df) == "class_"] <- "class"
   }
 
   rename_map <- c(
-    procedure_name = "survey_name",
     recorded_at = "observation_recording_timestamp",
     data = "survey_observation",
     observation = "survey_observation",
@@ -277,6 +341,19 @@
     }
   }
 
+  # system_name -> survey_name; previous survey_name (old procedure label) ->
+  # procedure_name. Raw exports already use procedure_name.
+  if ("survey_name" %in% names(df) && !("procedure_name" %in% names(df))) {
+    names(df)[names(df) == "survey_name"] <- "procedure_name"
+  }
+  if ("system_name" %in% names(df)) {
+    if ("survey_name" %in% names(df)) {
+      df$system_name <- NULL
+    } else {
+      names(df)[names(df) == "system_name"] <- "survey_name"
+    }
+  }
+
   ts_drop <- names(df)[
     (grepl("timestamp", names(df), ignore.case = TRUE) |
       grepl("_at$", names(df), ignore.case = TRUE)) &
@@ -286,15 +363,67 @@
     df <- df[, setdiff(names(df), ts_drop), drop = FALSE]
   }
 
+  if ("feature_geometry" %in% names(df)) {
+    coordinates <- .phone_obs_feature_coordinates(df$feature_geometry)
+    df$feature_geometry <- NULL
+    for (nm in .PHONE_OBS_COORD_COLS) {
+      if (nm %in% names(df)) {
+        df[[nm]] <- NULL
+      }
+    }
+    df <- dplyr::bind_cols(df, coordinates)
+  }
+
+  if ("feature_uuid" %in% names(df)) {
+    df$feature_id <- .phone_obs_feature_ids(df$feature_uuid)
+    df$feature_uuid <- NULL
+  }
+
+  if (all(c("data_type", "survey_observation") %in% names(df))) {
+    media <- df$data_type %in% .PHONE_OBS_MEDIA_TYPES
+    has_file <- media & !is.na(df$survey_observation) &
+      nzchar(as.character(df$survey_observation))
+    if (any(has_file)) {
+      file_name <- basename(sub(
+        "[?#].*$",
+        "",
+        as.character(df$survey_observation[has_file])
+      ))
+      survey <- if ("survey_name" %in% names(df)) {
+        df$survey_name[has_file]
+      } else {
+        "survey"
+      }
+      procedure <- if ("procedure_name" %in% names(df)) {
+        df$procedure_name[has_file]
+      } else {
+        "procedure"
+      }
+      feature <- if ("feature_id" %in% names(df)) {
+        df$feature_id[has_file]
+      } else {
+        "f000"
+      }
+      df$survey_observation[has_file] <- .phone_obs_media_relpath(
+        survey,
+        procedure,
+        feature,
+        file_name
+      )
+    }
+  }
+
   nm <- names(df)
-  lead_cols <- intersect(c("system_name", "survey_name"), nm)
+  lead_cols <- intersect(c("feature_id", "survey_name", "procedure_name"), nm)
   ts_cols <- intersect("observation_recording_timestamp", nm)
-  uuid_cols <- nm[grepl("_uuid$", nm, ignore.case = TRUE)]
+  uuid_cols <- character()
+  coord_cols <- intersect(.PHONE_OBS_COORD_COLS, nm)
   tax_cols <- if (add_tax) intersect(.PHONE_OBS_LABEL_COLS, nm) else character()
   surveyor_cols <- intersect("surveyor_name", nm)
   special <- unique(c(
     lead_cols,
     ts_cols,
+    coord_cols,
     "survey_observation",
     tax_cols,
     uuid_cols,
@@ -306,6 +435,7 @@
     lead_cols,
     other_cols,
     ts_cols,
+    coord_cols,
     intersect("survey_observation", nm),
     tax_cols,
     uuid_cols,
@@ -313,6 +443,248 @@
     nm
   ))
   df[, ordered, drop = FALSE]
+}
+
+.phone_obs_wide_format <- function(long_data) {
+  if (!is.data.frame(long_data) || nrow(long_data) == 0L ||
+      !("feature_id" %in% names(long_data))) {
+    return(tibble::as_tibble(long_data))
+  }
+  long_data <- tibble::as_tibble(long_data)
+  feature_ids <- unique(long_data$feature_id)
+  feature_ids <- feature_ids[!is.na(feature_ids)]
+  base_cols <- intersect(
+    c(
+      "feature_id",
+      "survey_name",
+      "procedure_name",
+      "observation_recording_timestamp",
+      "longitude",
+      "latitude"
+    ),
+    names(long_data)
+  )
+
+  observations <- lapply(feature_ids, function(feature_id) {
+    feature <- long_data[long_data$feature_id == feature_id, , drop = FALSE]
+    item <- if ("item_name" %in% names(feature)) {
+      as.character(feature$item_name)
+    } else {
+      rep("observation", nrow(feature))
+    }
+    item[is.na(item) | !nzchar(item)] <- "Observation"
+
+    value <- if ("survey_observation" %in% names(feature)) {
+      as.character(feature$survey_observation)
+    } else {
+      rep(NA_character_, nrow(feature))
+    }
+    if ("label" %in% names(feature)) {
+      use_label <- is.na(value) | !nzchar(value)
+      value[use_label] <- as.character(feature$label[use_label])
+    }
+
+    item_names <- unique(item)
+    values <- lapply(item_names, function(item_name) {
+      item_values <- value[item == item_name]
+      if (length(item_values) == 1L) {
+        return(item_values[[1]])
+      }
+      jsonlite::toJSON(item_values, auto_unbox = FALSE, na = "null")
+    })
+    names(values) <- item_names
+    values
+  })
+
+  first_rows <- match(feature_ids, long_data$feature_id)
+  wide <- long_data[first_rows, base_cols, drop = FALSE]
+  observation_cols <- unique(unlist(lapply(observations, names), use.names = FALSE))
+  for (column in observation_cols) {
+    wide[[column]] <- NA_character_
+  }
+  for (i in seq_along(observations)) {
+    for (column in names(observations[[i]])) {
+      wide[[column]][[i]] <- observations[[i]][[column]]
+    }
+  }
+  if ("surveyor_name" %in% names(long_data)) {
+    wide$surveyor_name <- long_data$surveyor_name[first_rows]
+  }
+  wide
+}
+
+.phone_obs_column_guide <- function(wide_data, long_data) {
+  descriptions <- c(
+    feature_id = "Unique identifier shared by observations from the same feature.",
+    survey_name = "NatureCube survey kit name.",
+    procedure_name = "NatureCube survey procedure name.",
+    observation_recording_timestamp = "Date and time the feature observations were recorded.",
+    longitude = "Feature longitude.",
+    latitude = "Feature latitude.",
+    item_name = "Procedure item associated with this observation.",
+    data_type = "Observation data type, such as phone-photo, numeric, or label.",
+    survey_observation = "Recorded value, or media path survey_name/procedure_name/feature_id/file_name.",
+    observation_notes = "User-provided notes for the observation.",
+    class = "Taxonomic class from procedure labels.",
+    order = "Taxonomic order from procedure labels.",
+    family = "Taxonomic family from procedure labels.",
+    genus = "Taxonomic genus from procedure labels.",
+    species = "Taxonomic species from procedure labels.",
+    common_name = "Common name from procedure labels.",
+    label = "Taxonomic label applied to the procedure item.",
+    number_of_individuals = "Number of individuals associated with the procedure item.",
+    prediction_accuracy = "Automated-label prediction score returned by NatureCube.",
+    surveyor_name = "Name or username of the surveyor who recorded the observation."
+  )
+  guide_for <- function(data, sheet) {
+    columns <- names(data)
+    description <- unname(descriptions[columns])
+    generated <- sheet == "Wide format" & is.na(description)
+    description[generated] <- paste0(
+      "Value for survey item '",
+      columns[generated],
+      "'. Repeated observations are stored as a JSON array."
+    )
+    description[is.na(description)] <- "Field returned by the NatureCube observation export."
+    tibble::tibble(`sheet name` = sheet, column = columns, description = description)
+  }
+  dplyr::bind_rows(
+    guide_for(wide_data, "Wide format"),
+    guide_for(long_data, "Long format")
+  )
+}
+
+.phone_obs_media_relpath <- function(survey, procedure, feature_id, file_name) {
+  clean <- function(x, fallback) {
+    x <- as.character(x)
+    x[is.na(x) | !nzchar(x)] <- fallback
+    .sanitize_dir_token(x)
+  }
+  paste(
+    clean(survey, "survey"),
+    clean(procedure, "procedure"),
+    clean(feature_id, "f000"),
+    file_name,
+    sep = "/"
+  )
+}
+
+.relocate_phone_obs_media <- function(observations, extract_dir, dest_dir) {
+  if (!is.data.frame(observations) || nrow(observations) == 0L) {
+    return(invisible(NULL))
+  }
+  if (!all(c("data_type", "survey_observation") %in% names(observations))) {
+    return(invisible(NULL))
+  }
+
+  extracted <- list.files(extract_dir, recursive = TRUE, full.names = TRUE)
+  extracted <- extracted[file.info(extracted)$isdir %in% FALSE]
+  extracted <- extracted[!grepl(
+    "\\.(csv|xlsx|gpkg|zip)$",
+    extracted,
+    ignore.case = TRUE
+  )]
+  if (length(extracted) == 0L) {
+    return(invisible(NULL))
+  }
+  by_name <- split(extracted, basename(extracted))
+
+  media <- observations$data_type %in% .PHONE_OBS_MEDIA_TYPES
+  paths <- as.character(observations$survey_observation)
+  media <- media & !is.na(paths) & nzchar(paths)
+
+  for (i in which(media)) {
+    rel <- paths[[i]]
+    file_name <- basename(rel)
+    candidates <- by_name[[file_name]]
+    if (is.null(candidates) || length(candidates) == 0L) {
+      next
+    }
+    src <- candidates[[1]]
+    by_name[[file_name]] <- candidates[-1]
+    dest <- file.path(dest_dir, rel)
+    dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+    same <- file.exists(dest) &&
+      identical(
+        normalizePath(src, winslash = "/", mustWork = FALSE),
+        normalizePath(dest, winslash = "/", mustWork = FALSE)
+      )
+    if (!same) {
+      ok <- file.rename(src, dest)
+      if (!isTRUE(ok)) {
+        file.copy(src, dest, overwrite = TRUE)
+        unlink(src)
+      }
+    }
+  }
+  invisible(NULL)
+}
+
+.write_phone_obs_workbook <- function(long_data, path) {
+  wide_data <- .phone_obs_wide_format(long_data)
+  guide <- .phone_obs_column_guide(wide_data, long_data)
+  writexl::write_xlsx(
+    list(
+      "Column description" = guide,
+      "Wide format" = wide_data,
+      "Long format" = long_data
+    ),
+    path = path
+  )
+  invisible(list(path = path, wide = wide_data, long = long_data))
+}
+
+.write_phone_obs_geopackage <- function(long_data, path) {
+  if (!is.data.frame(long_data) || nrow(long_data) == 0L ||
+      !all(c("feature_id", "longitude", "latitude") %in% names(long_data))) {
+    return(invisible(NULL))
+  }
+  long_data <- tibble::as_tibble(long_data)
+  first_rows <- match(unique(long_data$feature_id), long_data$feature_id)
+  parent_cols <- intersect(
+    c(
+      "feature_id",
+      "survey_name",
+      "procedure_name",
+      "observation_recording_timestamp",
+      "longitude",
+      "latitude",
+      "surveyor_name"
+    ),
+    names(long_data)
+  )
+  parent_features <- long_data[first_rows, parent_cols, drop = FALSE]
+  parent_features <- sf::st_as_sf(
+    parent_features,
+    coords = c("longitude", "latitude"),
+    crs = 4326,
+    remove = FALSE,
+    na.fail = FALSE
+  )
+
+  data <- long_data[
+    ,
+    setdiff(names(long_data), c("longitude", "latitude")),
+    drop = FALSE
+  ]
+  if (file.exists(path)) {
+    unlink(path)
+  }
+  sf::st_write(
+    parent_features,
+    dsn = path,
+    layer = "parent_features",
+    quiet = TRUE
+  )
+  sf::st_write(
+    data,
+    dsn = path,
+    layer = "data",
+    append = FALSE,
+    layer_options = "ASPATIAL_VARIANT=GPKG_ATTRIBUTES",
+    quiet = TRUE
+  )
+  invisible(path)
 }
 
 .parse_phone_obs_csv <- function(text) {
@@ -418,6 +790,8 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       dest_dir     = NULL,
       zip_path     = NULL,
       files        = character(),
+      excel_path   = NULL,
+      geopackage_path = NULL,
       row_count    = 0L,
       media_count  = 0L,
       expires_at   = NULL,
@@ -434,8 +808,10 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 
   out_dir <- .unique_export_dir(dest_dir, procedure_id, data_type)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  extract_dir <- tempfile("phone-obs-")
+  dir.create(extract_dir, recursive = TRUE, showWarnings = FALSE)
   zip_name <- meta$filename %||% paste0(data_type, ".zip")
-  zip_path <- file.path(out_dir, zip_name)
+  zip_path <- file.path(extract_dir, zip_name)
 
   token <- .phone_obs_token_from_url(download_url)
   if (!is.null(token)) {
@@ -451,8 +827,8 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       httr2::req_perform(path = zip_path)
   }
 
-  utils::unzip(zip_path, exdir = out_dir)
-  files <- list.files(out_dir, recursive = TRUE, full.names = TRUE)
+  utils::unzip(zip_path, exdir = extract_dir)
+  files <- list.files(extract_dir, recursive = TRUE, full.names = TRUE)
   csv_path <- files[grepl("observations\\.csv$", files, ignore.case = TRUE)]
   observations <- if (length(csv_path)) {
     readr::read_csv(csv_path[[1]], show_col_types = FALSE, progress = FALSE) %>%
@@ -461,16 +837,28 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   } else {
     tibble::tibble()
   }
-  if (length(csv_path)) {
-    readr::write_csv(observations, csv_path[[1]])
+
+  .relocate_phone_obs_media(observations, extract_dir, out_dir)
+
+  excel_path <- NULL
+  geopackage_path <- NULL
+  if (nrow(observations) > 0L || length(csv_path)) {
+    excel_path <- file.path(out_dir, "observations.xlsx")
+    .write_phone_obs_workbook(observations, excel_path)
+    geopackage_path <- file.path(out_dir, "observations.gpkg")
+    .write_phone_obs_geopackage(observations, geopackage_path)
   }
+  unlink(extract_dir, recursive = TRUE)
+  files <- list.files(out_dir, recursive = TRUE, full.names = TRUE)
 
   list(
     data_type     = data_type,
     observations  = observations,
     dest_dir      = out_dir,
-    zip_path      = zip_path,
+    zip_path      = NULL,
     files         = files,
+    excel_path    = excel_path,
+    geopackage_path = geopackage_path,
     row_count     = meta$row_count,
     media_count   = meta$media_count,
     expires_at    = meta$expires_at,
@@ -501,22 +889,35 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' (\code{phone-photo}, \code{phone-video}, \code{phone-audio}) return a JSON
 #' export descriptor; this function then calls
 #' \link{download_phone_observation_export}, follows the redirect to GCS,
-#' extracts the ZIP into a uniquely named directory under \code{dest_dir},
-#' and reads \code{observations.csv}.
+#' extracts the ZIP into a timestamped folder under \code{dest_dir}, reads
+#' \code{observations.csv}, writes \code{observations.xlsx} and
+#' \code{observations.gpkg} at that folder root, and rearranges media into
+#' \code{survey_name/procedure_name/feature_id/} beside those files.
 #'
-#' Returned observations (and the rewritten on-disk \code{observations.csv})
+#' The workbook has three sheets: a column guide, one wide-format row per
+#' feature, and long-format observations linked by a client-friendly
+#' \code{feature_id} such as \code{f001}. Wide-format survey-item
+#' columns use the exact \code{item_name}; repeated observations for the same
+#' feature and item are stored as a JSON array. The GeoPackage contains a
+#' spatial \code{parent_features} layer and a related non-spatial \code{data}
+#' table linked by \code{feature_id}.
+#'
+#' Returned observations (and the workbook data)
 #' drop identifiers/device noise (\code{project_id}, \code{project_system_id},
 #' \code{procedure_id}, \code{observation_id}, \code{item_uuid},
-#' \code{phone_model}, \code{phone_operating_system}); rename
-#' \code{system_name}/\code{procedure_name} lead columns
-#' (\code{procedure_name} becomes \code{survey_name}),
+#' \code{observation_uuid}, \code{phone_model},
+#' \code{phone_operating_system}); rename \code{system_name} to
+#' \code{survey_name} and keep \code{procedure_name};
 #' \code{recorded_at} to \code{observation_recording_timestamp} (other
 #' timestamp columns dropped), \code{data} to \code{survey_observation}, and
-#' \code{username} to \code{surveyor_name} (last column). Coordinate columns
-#' are left unchanged. When any \code{labels} JSON is present it is expanded
-#' into taxonomy/prediction columns (\code{class}, \code{order}, ...) after
-#' \code{survey_observation}; otherwise those columns are omitted. All
-#' \code{*_uuid} columns are grouped before \code{surveyor_name}.
+#' \code{username} to \code{surveyor_name} (last column). Raw
+#' \code{longitude}/\code{latitude} are replaced by coordinates parsed from
+#' the feature-level \code{feature_geometry}. When any \code{labels} JSON is
+#' present it is expanded into taxonomy/prediction columns (\code{class},
+#' \code{order}, ...) after \code{survey_observation}; otherwise those columns
+#' are omitted. The internal \code{feature_uuid} is replaced by
+#' \code{feature_id}. Media observations use the relative path
+#' \code{survey_name/procedure_name/feature_id/file_name}.
 #'
 #' \code{data_type} may be omitted (download every type), one type, or several.
 #' Multiple types are fetched sequentially (the media ZIP build is server-side
@@ -532,14 +933,16 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #'   \code{phone-video}, \code{phone-audio}, \code{choice}, \code{text},
 #'   \code{numeric}, \code{label}. When \code{NULL} (default), every type is
 #'   downloaded.
-#' @param dest_dir Optional directory for extracted media ZIP contents. When
-#'   \code{NULL} (default), uses the current working directory. Existing names
-#'   are never overwritten; a timestamped directory is created instead.
+#' @param dest_dir Optional parent directory for the timestamped export folder.
+#'   When \code{NULL} (default), uses the current working directory. Each media
+#'   download creates a new \code{phone-obs-...} folder that is never
+#'   overwritten.
 #'
 #' @return If a single \code{data_type} is requested, a tibble (non-media)
-#'   or a named list with \code{observations}, \code{dest_dir}, \code{files},
-#'   and export metadata (media). If several types are requested (including
-#'   the all-types default), a named list of those results.
+#'   or a named list with \code{observations}, \code{dest_dir},
+#'   \code{excel_path}, \code{geopackage_path}, \code{files}, and export
+#'   metadata (media). If several types are requested (including the all-types
+#'   default), a named list of those results.
 #'
 #' @examples
 #' \dontrun{
