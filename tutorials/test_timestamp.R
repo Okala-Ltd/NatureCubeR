@@ -43,7 +43,7 @@ media_assets <- get_media_assets(
 # Step 4: Calculate corrected timestamps
 # -----------------------------------------------------------------------------
 # Work on a subset while testing; remove the slice() call to process everything.
-to_correct <- media_assets |>
+to_correct <- media_assets %>%
   dplyr::slice(1:100)
 
 # Parse the stored timestamp, then apply your correction.
@@ -51,15 +51,15 @@ to_correct <- media_assets |>
 # Adjust the offset to match the actual clock error for your deployment.
 offset_seconds <- -60
 
-to_correct <- to_correct |>
+to_correct <- to_correct %>%
   dplyr::mutate(
     new_timestamp = lubridate::as_datetime(media_file_created_at) + offset_seconds,
     new_timestamp = format(new_timestamp, "%Y-%m-%dT%H:%M:%S")
   )
 
 # Inspect the before/after values before pushing.
-to_correct |>
-  dplyr::select(media_file_record_id, media_file_created_at, new_timestamp) |>
+to_correct %>%
+  dplyr::select(media_file_record_id, media_file_created_at, new_timestamp) %>%
   head()
 
 # -----------------------------------------------------------------------------

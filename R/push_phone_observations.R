@@ -7,7 +7,7 @@
 # status and response body so the API's own error message is visible instead
 # of a generic httr2 error.
 .perform_or_stop <- function(req) {
-  resp   <- httr2::req_perform(req |> httr2::req_error(is_error = \(r) FALSE))
+  resp   <- httr2::req_perform(req %>% httr2::req_error(is_error = \(r) FALSE))
   status <- httr2::resp_status(resp)
   if (status >= 400) {
     body <- tryCatch(httr2::resp_body_string(resp), error = function(e) "<no response body>")
@@ -60,8 +60,8 @@ get_field_media_upload_urls <- function(hdr, files) {
       "getFieldMediaUploadUrls",
       hdr$key
     )
-    urlreq <- urlreq |>
-      httr2::req_method("POST") |>
+    urlreq <- urlreq %>%
+      httr2::req_method("POST") %>%
       httr2::req_body_json(list(files = unname(batch)))
 
     response <- httr2::req_perform(urlreq)
@@ -137,8 +137,9 @@ upload_field_media_files <- function(hdr, media_files) {
 #' @title Get Project Schema
 #'
 #' @description
-#' Retrieves the project schema (codebook) used to populate `project_system_id`,
-#' `procedure_id`, and valid item UUIDs for observation uploads.
+#' Retrieves the project schema (codebook) used to populate `project_id`,
+#' `project_system_id`, `procedure_id`, and valid item UUIDs for observation
+#' uploads and downloads.
 #'
 #' @param hdr A base URL and API key returned by \link{auth_headers} or
 #'   \link{auth_headers_dev}.
@@ -214,7 +215,7 @@ list_systems <- function(schema) {
   })
 
   result <- dplyr::bind_rows(rows)
-  print(result)
+  print(result, width = Inf, n = Inf)
   return(invisible(result))
 }
 
@@ -239,6 +240,7 @@ list_systems <- function(schema) {
 #'
 #' @return A named list (invisibly) with elements:
 #'   \describe{
+#'     \item{project_id}{Integer project ID from the schema.}
 #'     \item{system_id}{Integer project system ID.}
 #'     \item{procedure_id}{Integer procedure ID.}
 #'     \item{system_name}{Character system name.}
@@ -324,8 +326,10 @@ get_procedure <- function(schema,
   proc_form <- if (!is.null(procedure$form)) as.logical(procedure$form) else NA
   sys_id    <- if (!is.null(system$project_system_id)) as.integer(system$project_system_id) else NA_integer_
   proc_id   <- if (!is.null(procedure$procedure_id))   as.integer(procedure$procedure_id)   else NA_integer_
+  project_id <- if (!is.null(schema$project_id)) as.integer(schema$project_id) else NA_integer_
 
   out <- list(
+    project_id     = project_id,
     system_id      = sys_id,
     procedure_id   = proc_id,
     system_name    = sys_name,
@@ -684,8 +688,8 @@ upload_observations <- function(hdr, observations, dry_run = FALSE) {
 
   for (start in seq(1L, n, by = batch_size)) {
     end   <- min(start + batch_size - 1L, n)
-    urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) |>
-      httr2::req_method("POST") |>
+    urlreq <- httr2::req_url_path_append(hdr$root, "uploadObservations", hdr$key) %>%
+      httr2::req_method("POST") %>%
       httr2::req_body_json(list(observations = observations[start:end]), auto_unbox = TRUE)
     responses <- c(responses, httr2::resp_body_json(.perform_or_stop(urlreq)))
     cli::cli_progress_update(id = pb, set = end)

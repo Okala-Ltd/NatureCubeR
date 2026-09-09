@@ -3,7 +3,7 @@ send_media_chunks <- function(hdr, datachunk) {
   datachunk <- jsonlite::toJSON(datachunk, pretty = TRUE)
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateTimestamps", hdr$key)
-  urlreq_ap <- urlreq_ap |> httr2::req_method("PUT") |> httr2::req_body_json(jsonlite::fromJSON(datachunk))
+  urlreq_ap <- urlreq_ap %>% httr2::req_method("PUT") %>% httr2::req_body_json(jsonlite::fromJSON(datachunk))
   preq <- httr2::req_perform(urlreq_ap, verbosity = 3)
   resp <- httr2::resp_body_string(preq)
 
@@ -226,7 +226,7 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
   )
   # on.exit (not tryCatch) so the bar is always closed - including on a user
   # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
-  # phone_observations.R for the same pattern and why tryCatch's `error`
+  # push_phone_observations.R for the same pattern and why tryCatch's `error`
   # handler alone isn't enough.
   on.exit(cli::cli_progress_done(id = pb), add = TRUE)
 

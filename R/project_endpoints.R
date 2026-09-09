@@ -162,9 +162,9 @@ plot_stations <- function(geojson_response) {
                                        timeout = MEDIA_PAGE_TIMEOUT) {
   req <- httr2::req_url_path_append(
     hdr$root, "getMediaAssets", datatype, hdr$key
-  ) |>
-    httr2::req_method("POST") |>
-    httr2::req_body_json(data = as.list(as.integer(psr_ids))) |>
+  ) %>%
+    httr2::req_method("POST") %>%
+    httr2::req_body_json(data = as.list(as.integer(psr_ids))) %>%
     httr2::req_timeout(timeout)
 
   page_limit <- min(as.integer(limit), API_MAX_LIMIT)
@@ -370,8 +370,8 @@ get_media_assets <- function(hdr,
     station_tbl <- tibble::tibble(
       psr_id = psrID,
       record_count = as.integer(record_count)
-    ) |>
-      dplyr::group_by(.data$psr_id) |>
+    ) %>%
+      dplyr::group_by(.data$psr_id) %>%
       dplyr::summarise(
         record_count = max(.data$record_count, na.rm = TRUE),
         .groups = "drop"
