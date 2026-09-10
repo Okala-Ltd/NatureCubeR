@@ -691,12 +691,62 @@
   if (!nzchar(text)) {
     return(tibble::tibble())
   }
-  readr::read_csv(
-    I(text),
-    show_col_types = FALSE,
-    progress = FALSE
-  ) %>%
-    tibble::as_tibble()
+  # Guess types per page, then force value columns to character so pages with
+  # mixed `data` types (chr vs dbl for numeric exports) can still bind.
+  .normalize_phone_obs_value_cols(
+    readr::read_csv(
+      I(text),
+      show_col_types = FALSE,
+      progress = FALSE
+    ) %>%
+      tibble::as_tibble()
+  )
+}
+
+.PHONE_OBS_VALUE_COLS <- c("data", "observation", "numbers")
+
+.normalize_phone_obs_value_cols <- function(page) {
+  if (!is.data.frame(page) || ncol(page) == 0L) {
+    return(page)
+  }
+  for (col in intersect(.PHONE_OBS_VALUE_COLS, names(page))) {
+    page[[col]] <- as.character(page[[col]])
+  }
+  page
+}
+
+# Pages are parsed independently, so readr can guess different types for the
+# same column across pages. Normalize value cols and coerce any remaining
+# conflicts to character before bind_rows().
+.bind_phone_obs_pages <- function(batches) {
+  batches <- Filter(function(x) is.data.frame(x) && nrow(x) > 0L, batches)
+  if (length(batches) == 0L) {
+    return(tibble::tibble())
+  }
+  batches <- lapply(batches, .normalize_phone_obs_value_cols)
+  if (length(batches) == 1L) {
+    return(batches[[1]])
+  }
+
+  cols <- unique(unlist(lapply(batches, names), use.names = FALSE))
+  for (col in cols) {
+    types <- unique(vapply(batches, function(page) {
+      if (!(col %in% names(page))) {
+        return(NA_character_)
+      }
+      paste(class(page[[col]]), collapse = "/")
+    }, character(1)))
+    types <- types[!is.na(types)]
+    if (length(types) <= 1L) {
+      next
+    }
+    for (i in seq_along(batches)) {
+      if (col %in% names(batches[[i]])) {
+        batches[[i]][[col]] <- as.character(batches[[i]][[col]])
+      }
+    }
+  }
+  dplyr::bind_rows(batches)
 }
 
 .parse_phone_obs_csv <- function(text) {
@@ -837,7 +887,11 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   )
 }
 
-.fetch_phone_obs_csv <- function(hdr, project_id, procedure_id, data_type) {
+.fetch_phone_obs_csv <- function(hdr,
+                                 project_id,
+                                 procedure_id,
+                                 data_type,
+                                 on_page = NULL) {
   limit <- API_MAX_LIMIT
   batches <- list()
   offset <- 0L
@@ -845,8 +899,14 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   use_keyset <- TRUE
   total <- NA_integer_
   first <- TRUE
+  page_num <- 0L
+  row_count <- 0L
 
   repeat {
+    page_num <- page_num + 1L
+    if (is.function(on_page)) {
+      on_page(page = page_num, rows = row_count, data_type = data_type)
+    }
     page <- .fetch_phone_obs_csv_page(
       hdr = hdr,
       project_id = project_id,
@@ -874,6 +934,10 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
     }
 
     batches[[length(batches) + 1L]] <- batch
+    row_count <- row_count + nrow(batch)
+    if (is.function(on_page)) {
+      on_page(page = page_num, rows = row_count, data_type = data_type)
+    }
 
     if (use_keyset && !is.na(page$next_observation_id)) {
       after_observation_id <- page$next_observation_id
@@ -899,7 +963,7 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   if (length(batches) == 0L) {
     return(tibble::tibble())
   }
-  dplyr::bind_rows(batches) %>%
+  .bind_phone_obs_pages(batches) %>%
     .tidy_phone_observations()
 }
 
@@ -936,7 +1000,7 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   meta_headers <- .phone_obs_page_meta(result$resp)
   meta <- httr2::resp_body_json(result$resp)
   row_count <- as.integer(meta$row_count %||% 0L)
-  if (row_count <= 0L || !nzchar(as.character(meta$download_url %||% ""))) {
+  if (row_count <= 0L) {
     return(list(
       empty = FALSE,
       rows = tibble::tibble(),
@@ -946,6 +1010,14 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       info = NULL
     ))
   }
+  download_url <- as.character(meta$download_url %||% "")
+  if (!nzchar(download_url)) {
+    stop(
+      "getPhoneObservations did not return a download_url for ",
+      data_type,
+      "."
+    )
+  }
 
   extract_dir <- tempfile("phone-obs-page-")
   dir.create(extract_dir, recursive = TRUE, showWarnings = FALSE)
@@ -953,7 +1025,6 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 
   zip_name <- meta$filename %||% paste0(data_type, ".zip")
   zip_path <- file.path(extract_dir, zip_name)
-  download_url <- as.character(meta$download_url)
   token <- .phone_obs_token_from_url(download_url)
   if (!is.null(token)) {
     download_phone_observation_export(
@@ -1020,8 +1091,10 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   files <- list.files(extract_dir, recursive = TRUE, full.names = TRUE)
   csv_path <- files[grepl("observations\\.csv$", files, ignore.case = TRUE)]
   rows <- if (length(csv_path)) {
-    readr::read_csv(csv_path[[1]], show_col_types = FALSE, progress = FALSE) %>%
-      tibble::as_tibble()
+    .normalize_phone_obs_value_cols(
+      readr::read_csv(csv_path[[1]], show_col_types = FALSE, progress = FALSE) %>%
+        tibble::as_tibble()
+    )
   } else {
     integer()
   }
@@ -1044,8 +1117,21 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   media_files <- media_files[file.info(media_files)$isdir %in% FALSE]
   page_stage <- file.path(staging_dir, sprintf("p%04d", as.integer(page_index)))
   dir.create(page_stage, recursive = TRUE, showWarnings = FALSE)
+  extract_root <- normalizePath(extract_dir, winslash = "/", mustWork = TRUE)
   for (src in media_files) {
-    file.copy(src, file.path(page_stage, basename(src)), overwrite = FALSE)
+    # Keep relative paths so duplicate basenames in different folders are kept;
+    # .relocate_phone_obs_media() matches by basename and consumes candidates in order.
+    src_norm <- normalizePath(src, winslash = "/", mustWork = TRUE)
+    rel <- substring(src_norm, nchar(extract_root) + 2L)
+    if (!nzchar(rel)) {
+      rel <- basename(src)
+    }
+    dest <- file.path(page_stage, rel)
+    dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+    ok <- file.copy(src, dest, overwrite = TRUE)
+    if (!isTRUE(ok)) {
+      warning("Failed to stage media file: ", src, call. = FALSE)
+    }
   }
 
   list(
@@ -1061,7 +1147,12 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   )
 }
 
-.fetch_phone_obs_media <- function(hdr, project_id, procedure_id, data_type, dest_dir) {
+.fetch_phone_obs_media <- function(hdr,
+                                   project_id,
+                                   procedure_id,
+                                   data_type,
+                                   dest_dir,
+                                   on_page = NULL) {
   limit <- API_MAX_LIMIT
   out_dir <- .unique_export_dir(dest_dir, procedure_id, data_type)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1080,9 +1171,13 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   filename <- NULL
   first <- TRUE
   page_index <- 0L
+  row_count <- 0L
 
   repeat {
     page_index <- page_index + 1L
+    if (is.function(on_page)) {
+      on_page(page = page_index, rows = row_count, data_type = data_type)
+    }
     page <- .download_phone_obs_media_page(
       hdr = hdr,
       project_id = project_id,
@@ -1135,6 +1230,10 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       break
     }
     batches[[length(batches) + 1L]] <- batch
+    row_count <- row_count + nrow(batch)
+    if (is.function(on_page)) {
+      on_page(page = page_index, rows = row_count, data_type = data_type)
+    }
 
     if (use_keyset && !is.na(page$next_observation_id)) {
       after_observation_id <- page$next_observation_id
@@ -1159,7 +1258,7 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   observations <- if (length(batches) == 0L) {
     tibble::tibble()
   } else {
-    dplyr::bind_rows(batches) %>%
+    .bind_phone_obs_pages(batches) %>%
       .tidy_phone_observations()
   }
 
@@ -1209,7 +1308,13 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   } else {
     list(
       data_type = data_type,
-      observations = .fetch_phone_obs_csv(hdr, project_id, procedure_id, data_type)
+      observations = .fetch_phone_obs_csv(
+        hdr = hdr,
+        project_id = project_id,
+        procedure_id = procedure_id,
+        data_type = data_type,
+        on_page = on_page
+      )
     )
   }
 }
