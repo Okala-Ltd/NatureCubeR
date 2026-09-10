@@ -45,6 +45,10 @@ extracts the ZIP into a timestamped folder under \code{dest_dir}, reads
 \code{observations.gpkg} at that folder root, and rearranges media into
 \code{survey_name/procedure_name/feature_id/} beside those files.
 
+Large exports are paginated with \code{limit = 1000}. Pages are fetched
+with keyset cursors via \code{after_observation_id} when available,
+otherwise with \code{offset}, until an empty or short page is returned.
+
 The workbook has three sheets: a column guide, one wide-format row per
 feature, and long-format observations linked by a client-friendly
 \code{feature_id} such as \code{f001}. Wide-format survey-item
