@@ -962,10 +962,58 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       token = token,
       path = zip_path
     )
+    return(invisible(zip_path))
+  }
+  httr2::request(download_url) %>%
+    httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
+    httr2::req_perform(path = zip_path)
+  invisible(zip_path)
+}
+
+.phone_obs_request <- function(hdr,
+                               project_id,
+                               procedure_id,
+                               data_type,
+                               limit = API_MAX_LIMIT,
+                               offset = 0L,
+                               after_observation_id = NULL) {
+  req <- httr2::req_url_path_append(
+    hdr$root,
+    "getPhoneObservations",
+    hdr$key,
+    as.integer(project_id),
+    as.integer(procedure_id),
+    data_type
+  ) %>%
+    httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
+    httr2::req_retry(
+      max_tries = MEDIA_MAX_RETRIES,
+      is_transient = \(resp) {
+        httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
+      }
+    )
+
+  page_limit <- min(as.integer(limit), API_MAX_LIMIT)
+  if (!is.null(after_observation_id)) {
+    req <- httr2::req_url_query(
+      req,
+      limit = page_limit,
+      after_observation_id = as.integer(after_observation_id)
+    )
   } else {
-    httr2::request(download_url) %>%
-      httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
-      httr2::req_perform(path = zip_path)
+    req <- httr2::req_url_query(
+      req,
+      limit = page_limit,
+      offset = as.integer(offset)
+    )
+  }
+  req
+}
+
+.phone_obs_page_cursor <- function(df, limit, offset, after_observation_id, use_keyset) {
+  n <- nrow(df)
+  if (n == 0L) {
+    return(list(done = TRUE, offset = offset, after_observation_id = NULL, use_keyset = FALSE))
   }
 
   utils::unzip(zip_path, exdir = extract_dir)
@@ -975,7 +1023,17 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
     readr::read_csv(csv_path[[1]], show_col_types = FALSE, progress = FALSE) %>%
       tibble::as_tibble()
   } else {
-    tibble::tibble()
+    integer()
+  }
+  ids <- ids[!is.na(ids) & ids > 0L]
+
+  if (isTRUE(use_keyset) && length(ids) > 0L) {
+    return(list(
+      done = n < limit,
+      offset = 0L,
+      after_observation_id = max(ids),
+      use_keyset = TRUE
+    ))
   }
 
   media_files <- files[!grepl(
@@ -1133,9 +1191,21 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   )
 }
 
-.fetch_one_phone_obs_type <- function(hdr, project_id, procedure_id, data_type, dest_dir) {
+.fetch_one_phone_obs_type <- function(hdr,
+                                      project_id,
+                                      procedure_id,
+                                      data_type,
+                                      dest_dir,
+                                      on_page = NULL) {
   if (data_type %in% .PHONE_OBS_MEDIA_TYPES) {
-    .fetch_phone_obs_media(hdr, project_id, procedure_id, data_type, dest_dir)
+    .fetch_phone_obs_media(
+      hdr = hdr,
+      project_id = project_id,
+      procedure_id = procedure_id,
+      data_type = data_type,
+      dest_dir = dest_dir,
+      on_page = on_page
+    )
   } else {
     list(
       data_type = data_type,
@@ -1164,6 +1234,10 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' \code{dest_dir}, writes \code{observations.xlsx} and
 #' \code{observations.gpkg} at that folder root, and rearranges media into
 #' \code{survey_name/procedure_name/feature_id/} beside those files.
+#'
+#' Large exports are paginated with \code{limit = 1000}. Pages are fetched
+#' with keyset cursors via \code{after_observation_id} when available,
+#' otherwise with \code{offset}, until an empty or short page is returned.
 #'
 #' The workbook has three sheets: a column guide, one wide-format row per
 #' feature, and long-format observations linked by a client-friendly
@@ -1255,24 +1329,64 @@ get_phone_observations <- function(hdr,
     )
   }
 
+  # Use pb_status (not pb_extra): some cli/glue contexts fail to resolve
+  # `{pb_extra$...}` and then also break deferred cli_progress_done().
+  .pb_status <- function(data_type, page = 0L, rows = 0L) {
+    sprintf("%s | page %s | %s row(s)", data_type, page, rows)
+  }
   pb <- cli::cli_progress_bar(
-    format = "Downloading phone observations {cli::pb_current}/{cli::pb_total} type(s) | {cli::pb_bar} {cli::pb_percent} | elapsed: {cli::pb_elapsed} | ETA: {cli::pb_eta}",
-    total  = length(data_type),
-    clear  = FALSE
+    format = paste0(
+      "{cli::pb_spin} Downloading {cli::pb_current}/{cli::pb_total} type(s) | ",
+      "{cli::pb_bar} {cli::pb_percent} | {cli::pb_status} | ",
+      "elapsed: {cli::pb_elapsed} | ETA: {cli::pb_eta}"
+    ),
+    total = length(data_type),
+    clear = FALSE,
+    status = .pb_status(data_type[[1]])
   )
-  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+  on.exit(try(cli::cli_progress_done(id = pb), silent = TRUE), add = TRUE)
 
   results <- vector("list", length(data_type))
   names(results) <- data_type
   for (i in seq_along(data_type)) {
+    current_type <- data_type[[i]]
+    type_index <- i
+    cli::cli_progress_update(
+      id = pb,
+      set = type_index - 1L,
+      status = .pb_status(current_type)
+    )
+    on_page <- function(page, rows, data_type) {
+      cli::cli_progress_update(
+        id = pb,
+        set = type_index - 1L,
+        status = .pb_status(data_type, page = page, rows = rows)
+      )
+    }
     results[[i]] <- .fetch_one_phone_obs_type(
       hdr = hdr,
       project_id = ids$project_id,
       procedure_id = ids$procedure_id,
-      data_type = data_type[[i]],
-      dest_dir = dest_dir
+      data_type = current_type,
+      dest_dir = dest_dir,
+      on_page = on_page
     )
-    cli::cli_progress_update(id = pb, inc = 1)
+    final_rows <- if (is.data.frame(results[[i]])) {
+      nrow(results[[i]])
+    } else if (is.list(results[[i]]) && is.data.frame(results[[i]]$observations)) {
+      nrow(results[[i]]$observations)
+    } else {
+      0L
+    }
+    cli::cli_progress_update(
+      id = pb,
+      set = type_index,
+      status = .pb_status(
+        current_type,
+        page = max(1L, as.integer(ceiling(final_rows / API_MAX_LIMIT))),
+        rows = final_rows
+      )
+    )
   }
 
   if (length(results) == 1L) {
