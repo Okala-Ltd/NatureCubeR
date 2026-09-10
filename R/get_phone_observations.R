@@ -691,12 +691,7 @@
   if (!nzchar(text)) {
     return(tibble::tibble())
   }
-  readr::read_csv(
-    I(text),
-    show_col_types = FALSE,
-    progress = FALSE
-  ) %>%
-    tibble::as_tibble() %>%
+  .parse_phone_obs_csv_raw(text) %>%
     .tidy_phone_observations()
 }
 
@@ -740,79 +735,7 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   .perform_or_stop(req)
 }
 
-.fetch_phone_obs_csv <- function(hdr, project_id, procedure_id, data_type) {
-  req <- httr2::req_url_path_append(
-    hdr$root,
-    "getPhoneObservations",
-    hdr$key,
-    as.integer(project_id),
-    as.integer(procedure_id),
-    data_type
-  ) %>%
-    httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
-    httr2::req_retry(
-      max_tries = MEDIA_MAX_RETRIES,
-      is_transient = \(resp) {
-        httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
-      }
-    )
-  result <- .perform_phone_obs_request(req, data_type, project_id, procedure_id)
-  if (isTRUE(result$empty)) {
-    .message_phone_obs_empty(result)
-    return(tibble::tibble())
-  }
-  .parse_phone_obs_csv(httr2::resp_body_string(result$resp))
-}
-
-.fetch_phone_obs_media <- function(hdr, project_id, procedure_id, data_type, dest_dir) {
-  req <- httr2::req_url_path_append(
-    hdr$root,
-    "getPhoneObservations",
-    hdr$key,
-    as.integer(project_id),
-    as.integer(procedure_id),
-    data_type
-  ) %>%
-    httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
-    httr2::req_retry(
-      max_tries = MEDIA_MAX_RETRIES,
-      is_transient = \(resp) {
-        httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
-      }
-    )
-
-  result <- .perform_phone_obs_request(req, data_type, project_id, procedure_id)
-  if (isTRUE(result$empty)) {
-    .message_phone_obs_empty(result)
-    return(list(
-      data_type    = data_type,
-      observations = tibble::tibble(),
-      dest_dir     = NULL,
-      zip_path     = NULL,
-      files        = character(),
-      excel_path   = NULL,
-      geopackage_path = NULL,
-      row_count    = 0L,
-      media_count  = 0L,
-      expires_at   = NULL,
-      size_bytes   = 0L,
-      filename     = NULL
-    ))
-  }
-
-  meta <- httr2::resp_body_json(result$resp)
-  download_url <- as.character(meta$download_url %||% "")
-  if (!nzchar(download_url)) {
-    stop("getPhoneObservations did not return a download_url for ", data_type, ".")
-  }
-
-  out_dir <- .unique_export_dir(dest_dir, procedure_id, data_type)
-  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  extract_dir <- tempfile("phone-obs-")
-  dir.create(extract_dir, recursive = TRUE, showWarnings = FALSE)
-  zip_name <- meta$filename %||% paste0(data_type, ".zip")
-  zip_path <- file.path(extract_dir, zip_name)
-
+.download_phone_obs_zip <- function(hdr, project_id, download_url, zip_path) {
   token <- .phone_obs_token_from_url(download_url)
   if (!is.null(token)) {
     download_phone_observation_export(
@@ -821,34 +744,352 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       token = token,
       path = zip_path
     )
+    return(invisible(zip_path))
+  }
+  httr2::request(download_url) %>%
+    httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
+    httr2::req_perform(path = zip_path)
+  invisible(zip_path)
+}
+
+.phone_obs_request <- function(hdr,
+                               project_id,
+                               procedure_id,
+                               data_type,
+                               limit = API_MAX_LIMIT,
+                               offset = 0L,
+                               after_observation_id = NULL) {
+  req <- httr2::req_url_path_append(
+    hdr$root,
+    "getPhoneObservations",
+    hdr$key,
+    as.integer(project_id),
+    as.integer(procedure_id),
+    data_type
+  ) %>%
+    httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
+    httr2::req_retry(
+      max_tries = MEDIA_MAX_RETRIES,
+      is_transient = \(resp) {
+        httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
+      }
+    )
+
+  page_limit <- min(as.integer(limit), API_MAX_LIMIT)
+  if (!is.null(after_observation_id)) {
+    req <- httr2::req_url_query(
+      req,
+      limit = page_limit,
+      after_observation_id = as.integer(after_observation_id)
+    )
   } else {
-    httr2::request(download_url) %>%
-      httr2::req_timeout(MEDIA_PAGE_TIMEOUT) %>%
-      httr2::req_perform(path = zip_path)
+    req <- httr2::req_url_query(
+      req,
+      limit = page_limit,
+      offset = as.integer(offset)
+    )
+  }
+  req
+}
+
+.phone_obs_page_cursor <- function(df, limit, offset, after_observation_id, use_keyset) {
+  n <- nrow(df)
+  if (n == 0L) {
+    return(list(done = TRUE, offset = offset, after_observation_id = NULL, use_keyset = FALSE))
   }
 
-  utils::unzip(zip_path, exdir = extract_dir)
-  files <- list.files(extract_dir, recursive = TRUE, full.names = TRUE)
-  csv_path <- files[grepl("observations\\.csv$", files, ignore.case = TRUE)]
-  observations <- if (length(csv_path)) {
-    readr::read_csv(csv_path[[1]], show_col_types = FALSE, progress = FALSE) %>%
-      tibble::as_tibble() %>%
-      .tidy_phone_observations()
+  ids <- if ("observation_id" %in% names(df)) {
+    suppressWarnings(as.integer(df$observation_id))
   } else {
-    tibble::tibble()
+    integer()
+  }
+  ids <- ids[!is.na(ids) & ids > 0L]
+
+  if (isTRUE(use_keyset) && length(ids) > 0L) {
+    return(list(
+      done = n < limit,
+      offset = 0L,
+      after_observation_id = max(ids),
+      use_keyset = TRUE
+    ))
   }
 
-  .relocate_phone_obs_media(observations, extract_dir, out_dir)
+  list(
+    done = n < limit,
+    offset = as.integer(offset) + n,
+    after_observation_id = NULL,
+    use_keyset = FALSE
+  )
+}
 
-  excel_path <- NULL
-  geopackage_path <- NULL
-  if (nrow(observations) > 0L || length(csv_path)) {
-    excel_path <- file.path(out_dir, "observations.xlsx")
-    .write_phone_obs_workbook(observations, excel_path)
-    geopackage_path <- file.path(out_dir, "observations.gpkg")
-    .write_phone_obs_geopackage(observations, geopackage_path)
+.read_phone_obs_csv_file <- function(path) {
+  .normalize_phone_obs_value_cols(
+    readr::read_csv(path, show_col_types = FALSE, progress = FALSE) %>%
+      tibble::as_tibble()
+  )
+}
+
+.fetch_phone_obs_csv <- function(hdr,
+                                 project_id,
+                                 procedure_id,
+                                 data_type,
+                                 on_page = NULL) {
+  batches <- list()
+  offset <- 0L
+  after_observation_id <- NULL
+  use_keyset <- TRUE
+  limit <- API_MAX_LIMIT
+  page_num <- 0L
+  row_count <- 0L
+
+  repeat {
+    page_num <- page_num + 1L
+    if (is.function(on_page)) {
+      on_page(page = page_num, rows = row_count, data_type = data_type)
+    }
+    req <- .phone_obs_request(
+      hdr = hdr,
+      project_id = project_id,
+      procedure_id = procedure_id,
+      data_type = data_type,
+      limit = limit,
+      offset = offset,
+      after_observation_id = if (use_keyset) after_observation_id else NULL
+    )
+    result <- .perform_phone_obs_request(req, data_type, project_id, procedure_id)
+    if (isTRUE(result$empty)) {
+      if (page_num == 1L) {
+        .message_phone_obs_empty(result)
+        return(tibble::tibble())
+      }
+      break
+    }
+
+    page <- .parse_phone_obs_csv_raw(httr2::resp_body_string(result$resp))
+    if (nrow(page) == 0L) {
+      break
+    }
+    batches[[length(batches) + 1L]] <- page
+    row_count <- row_count + nrow(page)
+    if (is.function(on_page)) {
+      on_page(page = page_num, rows = row_count, data_type = data_type)
+    }
+
+    cursor <- .phone_obs_page_cursor(
+      page,
+      limit = limit,
+      offset = offset,
+      after_observation_id = after_observation_id,
+      use_keyset = use_keyset
+    )
+    if (isTRUE(cursor$done)) {
+      break
+    }
+    offset <- cursor$offset
+    after_observation_id <- cursor$after_observation_id
+    use_keyset <- cursor$use_keyset
   }
-  unlink(extract_dir, recursive = TRUE)
+
+  if (length(batches) == 0L) {
+    return(tibble::tibble())
+  }
+  .bind_phone_obs_pages(batches) %>% .tidy_phone_observations()
+}
+
+.parse_phone_obs_csv_raw <- function(text) {
+  if (!nzchar(text)) {
+    return(tibble::tibble())
+  }
+  # Guess types per page, then force value columns to character so pages with
+  # mixed `data` types (chr vs dbl for numeric exports) can still bind.
+  .normalize_phone_obs_value_cols(
+    readr::read_csv(
+      I(text),
+      show_col_types = FALSE,
+      progress = FALSE
+    ) %>%
+      tibble::as_tibble()
+  )
+}
+
+.PHONE_OBS_VALUE_COLS <- c("data", "observation", "numbers")
+
+.normalize_phone_obs_value_cols <- function(page) {
+  if (!is.data.frame(page) || ncol(page) == 0L) {
+    return(page)
+  }
+  for (col in intersect(.PHONE_OBS_VALUE_COLS, names(page))) {
+    page[[col]] <- as.character(page[[col]])
+  }
+  page
+}
+
+# Pages are parsed independently, so readr can guess different types for the
+# same column across pages. Normalize value cols and coerce any remaining
+# conflicts to character before bind_rows().
+.bind_phone_obs_pages <- function(batches) {
+  batches <- Filter(function(x) is.data.frame(x) && nrow(x) > 0L, batches)
+  if (length(batches) == 0L) {
+    return(tibble::tibble())
+  }
+  batches <- lapply(batches, .normalize_phone_obs_value_cols)
+  if (length(batches) == 1L) {
+    return(batches[[1]])
+  }
+
+  cols <- unique(unlist(lapply(batches, names), use.names = FALSE))
+  for (col in cols) {
+    types <- unique(vapply(batches, function(page) {
+      if (!(col %in% names(page))) {
+        return(NA_character_)
+      }
+      paste(class(page[[col]]), collapse = "/")
+    }, character(1)))
+    types <- types[!is.na(types)]
+    if (length(types) <= 1L) {
+      next
+    }
+    for (i in seq_along(batches)) {
+      if (col %in% names(batches[[i]])) {
+        batches[[i]][[col]] <- as.character(batches[[i]][[col]])
+      }
+    }
+  }
+  dplyr::bind_rows(batches)
+}
+
+.fetch_phone_obs_media <- function(hdr,
+                                   project_id,
+                                   procedure_id,
+                                   data_type,
+                                   dest_dir,
+                                   on_page = NULL) {
+  out_dir <- .unique_export_dir(dest_dir, procedure_id, data_type)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  media_staging <- tempfile("phone-obs-media-")
+  dir.create(media_staging, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(media_staging, recursive = TRUE), add = TRUE)
+
+  batches <- list()
+  offset <- 0L
+  after_observation_id <- NULL
+  use_keyset <- TRUE
+  limit <- API_MAX_LIMIT
+  page_num <- 0L
+  row_count <- 0L
+  media_count <- 0L
+  size_bytes <- 0L
+  expires_at <- NULL
+  filename <- NULL
+
+  empty_result <- list(
+    data_type    = data_type,
+    observations = tibble::tibble(),
+    dest_dir     = NULL,
+    zip_path     = NULL,
+    files        = character(),
+    excel_path   = NULL,
+    geopackage_path = NULL,
+    row_count    = 0L,
+    media_count  = 0L,
+    expires_at   = NULL,
+    size_bytes   = 0L,
+    filename     = NULL
+  )
+
+  repeat {
+    page_num <- page_num + 1L
+    if (is.function(on_page)) {
+      on_page(page = page_num, rows = row_count, data_type = data_type)
+    }
+    req <- .phone_obs_request(
+      hdr = hdr,
+      project_id = project_id,
+      procedure_id = procedure_id,
+      data_type = data_type,
+      limit = limit,
+      offset = offset,
+      after_observation_id = if (use_keyset) after_observation_id else NULL
+    )
+    result <- .perform_phone_obs_request(req, data_type, project_id, procedure_id)
+    if (isTRUE(result$empty)) {
+      if (page_num == 1L) {
+        .message_phone_obs_empty(result)
+        unlink(out_dir, recursive = TRUE)
+        return(empty_result)
+      }
+      break
+    }
+
+    meta <- httr2::resp_body_json(result$resp)
+    download_url <- as.character(meta$download_url %||% "")
+    page_rows <- as.integer(meta$row_count %||% NA_integer_)
+    if (!nzchar(download_url)) {
+      stop("getPhoneObservations did not return a download_url for ", data_type, ".")
+    }
+    if (!is.na(page_rows) && page_rows == 0L) {
+      break
+    }
+
+    page_dir <- file.path(media_staging, sprintf("page-%04d", page_num))
+    dir.create(page_dir, recursive = TRUE, showWarnings = FALSE)
+    zip_name <- meta$filename %||% paste0(data_type, "-page-", page_num, ".zip")
+    zip_path <- file.path(page_dir, zip_name)
+    .download_phone_obs_zip(hdr, project_id, download_url, zip_path)
+    utils::unzip(zip_path, exdir = page_dir)
+
+    files <- list.files(page_dir, recursive = TRUE, full.names = TRUE)
+    csv_path <- files[grepl("observations\\.csv$", files, ignore.case = TRUE)]
+    page <- if (length(csv_path)) {
+      .read_phone_obs_csv_file(csv_path[[1]])
+    } else {
+      tibble::tibble()
+    }
+    if (nrow(page) == 0L) {
+      break
+    }
+    batches[[length(batches) + 1L]] <- page
+
+    row_count <- row_count + nrow(page)
+    media_count <- media_count + as.integer(meta$media_count %||% 0L)
+    size_bytes <- size_bytes + as.integer(meta$size_bytes %||% 0L)
+    expires_at <- meta$expires_at %||% expires_at
+    filename <- meta$filename %||% filename
+    if (is.function(on_page)) {
+      on_page(page = page_num, rows = row_count, data_type = data_type)
+    }
+
+    cursor <- .phone_obs_page_cursor(
+      page,
+      limit = limit,
+      offset = offset,
+      after_observation_id = after_observation_id,
+      use_keyset = use_keyset
+    )
+    # Prefer API-reported page size when present and shorter than the CSV.
+    if (!is.na(page_rows) && page_rows < limit) {
+      break
+    }
+    if (isTRUE(cursor$done)) {
+      break
+    }
+    offset <- cursor$offset
+    after_observation_id <- cursor$after_observation_id
+    use_keyset <- cursor$use_keyset
+  }
+
+  if (length(batches) == 0L) {
+    unlink(out_dir, recursive = TRUE)
+    return(empty_result)
+  }
+
+  observations <- .bind_phone_obs_pages(batches) %>% .tidy_phone_observations()
+  .relocate_phone_obs_media(observations, media_staging, out_dir)
+
+  excel_path <- file.path(out_dir, "observations.xlsx")
+  .write_phone_obs_workbook(observations, excel_path)
+  geopackage_path <- file.path(out_dir, "observations.gpkg")
+  .write_phone_obs_geopackage(observations, geopackage_path)
   files <- list.files(out_dir, recursive = TRUE, full.names = TRUE)
 
   list(
@@ -859,21 +1100,39 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
     files         = files,
     excel_path    = excel_path,
     geopackage_path = geopackage_path,
-    row_count     = meta$row_count,
-    media_count   = meta$media_count,
-    expires_at    = meta$expires_at,
-    size_bytes    = meta$size_bytes,
-    filename      = meta$filename
+    row_count     = row_count,
+    media_count   = media_count,
+    expires_at    = expires_at,
+    size_bytes    = size_bytes,
+    filename      = filename
   )
 }
 
-.fetch_one_phone_obs_type <- function(hdr, project_id, procedure_id, data_type, dest_dir) {
+.fetch_one_phone_obs_type <- function(hdr,
+                                      project_id,
+                                      procedure_id,
+                                      data_type,
+                                      dest_dir,
+                                      on_page = NULL) {
   if (data_type %in% .PHONE_OBS_MEDIA_TYPES) {
-    .fetch_phone_obs_media(hdr, project_id, procedure_id, data_type, dest_dir)
+    .fetch_phone_obs_media(
+      hdr = hdr,
+      project_id = project_id,
+      procedure_id = procedure_id,
+      data_type = data_type,
+      dest_dir = dest_dir,
+      on_page = on_page
+    )
   } else {
     list(
       data_type    = data_type,
-      observations = .fetch_phone_obs_csv(hdr, project_id, procedure_id, data_type)
+      observations = .fetch_phone_obs_csv(
+        hdr = hdr,
+        project_id = project_id,
+        procedure_id = procedure_id,
+        data_type = data_type,
+        on_page = on_page
+      )
     )
   }
 }
@@ -893,6 +1152,10 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' \code{observations.csv}, writes \code{observations.xlsx} and
 #' \code{observations.gpkg} at that folder root, and rearranges media into
 #' \code{survey_name/procedure_name/feature_id/} beside those files.
+#'
+#' Large exports are paginated with \code{limit = 1000}. Pages are fetched
+#' with keyset cursors via \code{after_observation_id} when available,
+#' otherwise with \code{offset}, until an empty or short page is returned.
 #'
 #' The workbook has three sheets: a column guide, one wide-format row per
 #' feature, and long-format observations linked by a client-friendly
@@ -984,24 +1247,64 @@ get_phone_observations <- function(hdr,
     )
   }
 
+  # Use pb_status (not pb_extra): some cli/glue contexts fail to resolve
+  # `{pb_extra$...}` and then also break deferred cli_progress_done().
+  .pb_status <- function(data_type, page = 0L, rows = 0L) {
+    sprintf("%s | page %s | %s row(s)", data_type, page, rows)
+  }
   pb <- cli::cli_progress_bar(
-    format = "Downloading phone observations {cli::pb_current}/{cli::pb_total} type(s) | {cli::pb_bar} {cli::pb_percent} | elapsed: {cli::pb_elapsed} | ETA: {cli::pb_eta}",
-    total  = length(data_type),
-    clear  = FALSE
+    format = paste0(
+      "{cli::pb_spin} Downloading {cli::pb_current}/{cli::pb_total} type(s) | ",
+      "{cli::pb_bar} {cli::pb_percent} | {cli::pb_status} | ",
+      "elapsed: {cli::pb_elapsed} | ETA: {cli::pb_eta}"
+    ),
+    total = length(data_type),
+    clear = FALSE,
+    status = .pb_status(data_type[[1]])
   )
-  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+  on.exit(try(cli::cli_progress_done(id = pb), silent = TRUE), add = TRUE)
 
   results <- vector("list", length(data_type))
   names(results) <- data_type
   for (i in seq_along(data_type)) {
+    current_type <- data_type[[i]]
+    type_index <- i
+    cli::cli_progress_update(
+      id = pb,
+      set = type_index - 1L,
+      status = .pb_status(current_type)
+    )
+    on_page <- function(page, rows, data_type) {
+      cli::cli_progress_update(
+        id = pb,
+        set = type_index - 1L,
+        status = .pb_status(data_type, page = page, rows = rows)
+      )
+    }
     results[[i]] <- .fetch_one_phone_obs_type(
       hdr = hdr,
       project_id = ids$project_id,
       procedure_id = ids$procedure_id,
-      data_type = data_type[[i]],
-      dest_dir = dest_dir
+      data_type = current_type,
+      dest_dir = dest_dir,
+      on_page = on_page
     )
-    cli::cli_progress_update(id = pb, inc = 1)
+    final_rows <- if (is.data.frame(results[[i]])) {
+      nrow(results[[i]])
+    } else if (is.list(results[[i]]) && is.data.frame(results[[i]]$observations)) {
+      nrow(results[[i]]$observations)
+    } else {
+      0L
+    }
+    cli::cli_progress_update(
+      id = pb,
+      set = type_index,
+      status = .pb_status(
+        current_type,
+        page = max(1L, as.integer(ceiling(final_rows / API_MAX_LIMIT))),
+        rows = final_rows
+      )
+    )
   }
 
   if (length(results) == 1L) {
