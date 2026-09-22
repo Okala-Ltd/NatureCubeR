@@ -141,7 +141,7 @@
   "phone_operating_system",
   "item_uuid",
   "observation_id",
-  "observation_uuid"
+  "observation_uuid",
 )
 
 .PHONE_OBS_COORD_COLS <- c("longitude", "latitude")
@@ -158,8 +158,106 @@
   }, logical(1)))
 }
 
+# Parse JSON that may be plain, double-encoded, or contain literal \" escapes.
+.phone_obs_parse_json_value <- function(raw) {
+  if (is.null(raw) || length(raw) == 0L || (length(raw) == 1L && is.na(raw))) {
+    return(NULL)
+  }
+  text <- trimws(as.character(raw[[1]]))
+  if (!nzchar(text)) {
+    return(NULL)
+  }
+
+  for (attempt in seq_len(5L)) {
+    parsed <- tryCatch(
+      jsonlite::fromJSON(text, simplifyVector = TRUE, simplifyDataFrame = TRUE),
+      error = function(e) NULL
+    )
+    if (is.null(parsed)) {
+      unescaped <- gsub("\\\\\"", "\"", text)
+      unescaped <- gsub("\\\\\\\\", "\\\\", unescaped)
+      if (identical(unescaped, text)) {
+        break
+      }
+      text <- unescaped
+      next
+    }
+    # JSON string that itself contains JSON (double-encoded payload).
+    if (is.character(parsed) && length(parsed) == 1L) {
+      inner <- trimws(parsed)
+      if (nzchar(inner) && grepl("^\\s*[\\[{]", inner)) {
+        text <- inner
+        next
+      }
+    }
+    return(parsed)
+  }
+  NULL
+}
+
+.phone_obs_label_names_from_parsed <- function(parsed) {
+  if (is.null(parsed)) {
+    return(character())
+  }
+  if (is.data.frame(parsed)) {
+    if (!("label" %in% names(parsed))) {
+      return(character())
+    }
+    labs <- as.character(parsed$label)
+    return(labs[!is.na(labs) & nzchar(labs)])
+  }
+  if (is.list(parsed)) {
+    if (!is.null(names(parsed)) && "label" %in% names(parsed)) {
+      lab <- parsed[["label"]]
+      if (is.null(lab) || length(lab) == 0L || (length(lab) == 1L && is.na(lab))) {
+        return(character())
+      }
+      return(as.character(lab[[1]]))
+    }
+    labs <- vapply(parsed, function(x) {
+      if (is.list(x) && !is.null(x$label) && length(x$label) > 0L) {
+        return(as.character(x$label[[1]]))
+      }
+      if (is.character(x) && length(x) > 0L && nzchar(x[[1]])) {
+        return(as.character(x[[1]]))
+      }
+      NA_character_
+    }, character(1))
+    return(labs[!is.na(labs) & nzchar(labs)])
+  }
+  if (is.character(parsed)) {
+    labs <- parsed[!is.na(parsed) & nzchar(parsed)]
+    return(as.character(labs))
+  }
+  character()
+}
+
+# Return only the taxonomic label string(s). Never returns label_id or raw JSON.
+.phone_obs_label_text <- function(raw) {
+  if (is.null(raw) || length(raw) == 0L || (length(raw) == 1L && is.na(raw))) {
+    return(NA_character_)
+  }
+  text <- as.character(raw[[1]])
+  if (!nzchar(text)) {
+    return(NA_character_)
+  }
+  parsed <- .phone_obs_parse_json_value(text)
+  labs <- .phone_obs_label_names_from_parsed(parsed)
+  if (length(labs) == 0L) {
+    # Already a plain label value (not JSON-looking).
+    if (!grepl("^\\s*[\\[{]", text)) {
+      return(text)
+    }
+    return(NA_character_)
+  }
+  if (length(labs) == 1L) {
+    return(labs[[1]])
+  }
+  paste(labs, collapse = "; ")
+}
+
 # Expand the labels JSON array into flat taxonomy / prediction columns.
-# Uses the first label object when several are present.
+# Uses the first label object when several are present. Never keeps label_id.
 .expand_phone_obs_labels <- function(labels) {
   n <- length(labels)
   out <- tibble::tibble(
@@ -182,11 +280,7 @@
     if (is.null(raw) || (length(raw) == 1L && is.na(raw))) {
       next
     }
-    raw <- as.character(raw)
-    if (!nzchar(raw)) {
-      next
-    }
-    parsed <- tryCatch(jsonlite::fromJSON(raw, simplifyDataFrame = TRUE), error = function(e) NULL)
+    parsed <- .phone_obs_parse_json_value(raw)
     if (is.null(parsed)) {
       next
     }
@@ -196,7 +290,11 @@
       }
       row <- parsed[1, , drop = FALSE]
     } else if (is.list(parsed)) {
-      row <- parsed
+      if (is.null(names(parsed)) && length(parsed) > 0L && is.list(parsed[[1]])) {
+        row <- parsed[[1]]
+      } else {
+        row <- parsed
+      }
     } else {
       next
     }
@@ -229,6 +327,16 @@
     )
   }
   out
+}
+
+.normalize_phone_obs_item_name <- function(item) {
+  item <- as.character(item)
+  missing <- is.na(item) | !nzchar(item)
+  item[missing] <- "Observation"
+  # API schemas sometimes expose both "Taxonomic label" and "taxonomic label".
+  tax <- tolower(trimws(item)) == "taxonomic label"
+  item[tax] <- "Taxonomic label"
+  item
 }
 
 # Parse the feature-level WKT geometry. Raw longitude/latitude fields describe
@@ -267,26 +375,8 @@
   coordinates
 }
 
-.phone_obs_feature_ids <- function(feature_uuid) {
-  feature_uuid <- as.character(feature_uuid)
-  unique_uuid <- unique(feature_uuid[!is.na(feature_uuid) & nzchar(feature_uuid)])
-  missing <- is.na(feature_uuid) | !nzchar(feature_uuid)
-  feature_count <- length(unique_uuid) + sum(missing)
-  width <- max(3L, nchar(as.character(feature_count)))
-  ids <- stats::setNames(
-    sprintf(paste0("f%0", width, "d"), seq_along(unique_uuid)),
-    unique_uuid
-  )
-  result <- unname(ids[feature_uuid])
-  if (any(missing)) {
-    missing_ids <- seq.int(length(unique_uuid) + 1L, feature_count)
-    result[missing] <- sprintf(paste0("f%0", width, "d"), missing_ids)
-  }
-  result
-}
-
 # Drop noise columns, expand labels when present, rename client-facing fields,
-# derive feature coordinates/IDs, and put surveyor / observation UUIDs last.
+# derive feature coordinates, and put surveyor last.
 .tidy_phone_observations <- function(df) {
   if (!is.data.frame(df) || ncol(df) == 0L) {
     return(tibble::as_tibble(df))
@@ -298,7 +388,26 @@
     df <- df[, setdiff(names(df), drop), drop = FALSE]
   }
 
+  # Prefer the dedicated labels column; fall back to data/observation for label rows.
   label_src <- if ("labels" %in% names(df)) df$labels else NULL
+  if (!.has_phone_obs_label_data(label_src) &&
+      "data_type" %in% names(df) &&
+      any(!is.na(df$data_type) & df$data_type == "label")) {
+    value_col <- if ("data" %in% names(df)) {
+      "data"
+    } else if ("observation" %in% names(df)) {
+      "observation"
+    } else if ("survey_observation" %in% names(df)) {
+      "survey_observation"
+    } else {
+      NULL
+    }
+    if (!is.null(value_col)) {
+      label_src <- df[[value_col]]
+      label_src[is.na(df$data_type) | df$data_type != "label"] <- NA_character_
+    }
+  }
+
   existing_tax <- intersect(c(.PHONE_OBS_LABEL_COLS, "class_"), names(df))
   add_tax <- .has_phone_obs_label_data(label_src) ||
     (length(existing_tax) > 0L && any(vapply(
@@ -310,7 +419,7 @@
     df$labels <- NULL
   }
   if (.has_phone_obs_label_data(label_src)) {
-    for (nm in c(.PHONE_OBS_LABEL_COLS, "class_")) {
+    for (nm in c(.PHONE_OBS_LABEL_COLS, "class_", "label_id")) {
       if (nm %in% names(df)) {
         df[[nm]] <- NULL
       }
@@ -318,6 +427,9 @@
     df <- dplyr::bind_cols(df, .expand_phone_obs_labels(label_src))
   } else if ("class_" %in% names(df)) {
     names(df)[names(df) == "class_"] <- "class"
+  }
+  if ("label_id" %in% names(df)) {
+    df$label_id <- NULL
   }
 
   rename_map <- c(
@@ -354,6 +466,10 @@
     }
   }
 
+  if ("item_name" %in% names(df)) {
+    df$item_name <- .normalize_phone_obs_item_name(df$item_name)
+  }
+
   ts_drop <- names(df)[
     (grepl("timestamp", names(df), ignore.case = TRUE) |
       grepl("_at$", names(df), ignore.case = TRUE)) &
@@ -374,12 +490,32 @@
     df <- dplyr::bind_cols(df, coordinates)
   }
 
-  if ("feature_uuid" %in% names(df)) {
-    df$feature_id <- .phone_obs_feature_ids(df$feature_uuid)
-    df$feature_uuid <- NULL
-  }
+  # feature_uuid is kept as the stable feature key (feature_id is dropped above).
 
   if (all(c("data_type", "survey_observation") %in% names(df))) {
+    is_label <- !is.na(df$data_type) & df$data_type == "label"
+    if (any(is_label)) {
+      cleaned <- as.character(df$survey_observation)
+      if ("label" %in% names(df)) {
+        use_expanded <- is_label &
+          !is.na(df$label) &
+          nzchar(as.character(df$label))
+        cleaned[use_expanded] <- as.character(df$label[use_expanded])
+        still <- which(is_label & !use_expanded)
+      } else {
+        still <- which(is_label)
+      }
+      if (length(still) > 0L) {
+        cleaned[still] <- vapply(
+          df$survey_observation[still],
+          .phone_obs_label_text,
+          character(1),
+          USE.NAMES = FALSE
+        )
+      }
+      df$survey_observation <- cleaned
+    }
+
     media <- df$data_type %in% .PHONE_OBS_MEDIA_TYPES
     has_file <- media & !is.na(df$survey_observation) &
       nzchar(as.character(df$survey_observation))
@@ -399,10 +535,10 @@
       } else {
         "procedure"
       }
-      feature <- if ("feature_id" %in% names(df)) {
-        df$feature_id[has_file]
+      feature <- if ("feature_uuid" %in% names(df)) {
+        df$feature_uuid[has_file]
       } else {
-        "f000"
+        "missing-feature-uuid"
       }
       df$survey_observation[has_file] <- .phone_obs_media_relpath(
         survey,
@@ -414,7 +550,7 @@
   }
 
   nm <- names(df)
-  lead_cols <- intersect(c("feature_id", "survey_name", "procedure_name"), nm)
+  lead_cols <- intersect(c("feature_uuid", "survey_name", "procedure_name"), nm)
   ts_cols <- intersect("observation_recording_timestamp", nm)
   uuid_cols <- character()
   coord_cols <- intersect(.PHONE_OBS_COORD_COLS, nm)
@@ -447,15 +583,18 @@
 
 .phone_obs_wide_format <- function(long_data) {
   if (!is.data.frame(long_data) || nrow(long_data) == 0L ||
-      !("feature_id" %in% names(long_data))) {
+      !("feature_uuid" %in% names(long_data))) {
     return(tibble::as_tibble(long_data))
   }
   long_data <- tibble::as_tibble(long_data)
-  feature_ids <- unique(long_data$feature_id)
-  feature_ids <- feature_ids[!is.na(feature_ids)]
+  if ("item_name" %in% names(long_data)) {
+    long_data$item_name <- .normalize_phone_obs_item_name(long_data$item_name)
+  }
+  feature_uuids <- unique(long_data$feature_uuid)
+  feature_uuids <- feature_uuids[!is.na(feature_uuids) & nzchar(as.character(feature_uuids))]
   base_cols <- intersect(
     c(
-      "feature_id",
+      "feature_uuid",
       "survey_name",
       "procedure_name",
       "observation_recording_timestamp",
@@ -465,12 +604,12 @@
     names(long_data)
   )
 
-  observations <- lapply(feature_ids, function(feature_id) {
-    feature <- long_data[long_data$feature_id == feature_id, , drop = FALSE]
+  observations <- lapply(feature_uuids, function(feature_uuid) {
+    feature <- long_data[long_data$feature_uuid == feature_uuid, , drop = FALSE]
     item <- if ("item_name" %in% names(feature)) {
       as.character(feature$item_name)
     } else {
-      rep("observation", nrow(feature))
+      rep("Observation", nrow(feature))
     }
     item[is.na(item) | !nzchar(item)] <- "Observation"
 
@@ -478,6 +617,18 @@
       as.character(feature$survey_observation)
     } else {
       rep(NA_character_, nrow(feature))
+    }
+    # Label rows should already be plain text; fall back to expanded label col.
+    if ("data_type" %in% names(feature)) {
+      is_label <- !is.na(feature$data_type) & feature$data_type == "label"
+      if (any(is_label)) {
+        value[is_label] <- vapply(
+          value[is_label],
+          .phone_obs_label_text,
+          character(1),
+          USE.NAMES = FALSE
+        )
+      }
     }
     if ("label" %in% names(feature)) {
       use_label <- is.na(value) | !nzchar(value)
@@ -487,16 +638,20 @@
     item_names <- unique(item)
     values <- lapply(item_names, function(item_name) {
       item_values <- value[item == item_name]
+      item_values <- item_values[!is.na(item_values) & nzchar(item_values)]
+      if (length(item_values) == 0L) {
+        return(NA_character_)
+      }
       if (length(item_values) == 1L) {
         return(item_values[[1]])
       }
-      jsonlite::toJSON(item_values, auto_unbox = FALSE, na = "null")
+      jsonlite::toJSON(as.character(item_values), auto_unbox = FALSE, na = "null")
     })
     names(values) <- item_names
     values
   })
 
-  first_rows <- match(feature_ids, long_data$feature_id)
+  first_rows <- match(feature_uuids, long_data$feature_uuid)
   wide <- long_data[first_rows, base_cols, drop = FALSE]
   observation_cols <- unique(unlist(lapply(observations, names), use.names = FALSE))
   for (column in observation_cols) {
@@ -515,7 +670,10 @@
 
 .phone_obs_column_guide <- function(wide_data, long_data) {
   descriptions <- c(
-    feature_id = "Unique identifier shared by observations from the same feature.",
+    feature_uuid = paste(
+      "Stable NatureCube feature UUID shared by observations from the same",
+      "feature. Prefer this over generated short IDs so records stay traceable."
+    ),
     survey_name = "NatureCube survey kit name.",
     procedure_name = "NatureCube survey procedure name.",
     observation_recording_timestamp = "Date and time the feature observations were recorded.",
@@ -523,7 +681,10 @@
     latitude = "Feature latitude.",
     item_name = "Procedure item associated with this observation.",
     data_type = "Observation data type, such as phone-photo, numeric, or label.",
-    survey_observation = "Recorded value, or media path survey_name/procedure_name/feature_id/file_name.",
+    survey_observation = paste(
+      "Recorded value (plain taxonomic label text for data_type='label'),",
+      "or media path survey_name/procedure_name/feature_uuid/file_name."
+    ),
     observation_notes = "User-provided notes for the observation.",
     class = "Taxonomic class from procedure labels.",
     order = "Taxonomic order from procedure labels.",
@@ -554,7 +715,7 @@
   )
 }
 
-.phone_obs_media_relpath <- function(survey, procedure, feature_id, file_name) {
+.phone_obs_media_relpath <- function(survey, procedure, feature_uuid, file_name) {
   clean <- function(x, fallback) {
     x <- as.character(x)
     x[is.na(x) | !nzchar(x)] <- fallback
@@ -563,7 +724,7 @@
   paste(
     clean(survey, "survey"),
     clean(procedure, "procedure"),
-    clean(feature_id, "f000"),
+    clean(feature_uuid, "missing-feature-uuid"),
     file_name,
     sep = "/"
   )
@@ -636,14 +797,14 @@
 
 .write_phone_obs_geopackage <- function(long_data, path) {
   if (!is.data.frame(long_data) || nrow(long_data) == 0L ||
-      !all(c("feature_id", "longitude", "latitude") %in% names(long_data))) {
+      !all(c("feature_uuid", "longitude", "latitude") %in% names(long_data))) {
     return(invisible(NULL))
   }
   long_data <- tibble::as_tibble(long_data)
-  first_rows <- match(unique(long_data$feature_id), long_data$feature_id)
+  first_rows <- match(unique(long_data$feature_uuid), long_data$feature_uuid)
   parent_cols <- intersect(
     c(
-      "feature_id",
+      "feature_uuid",
       "survey_name",
       "procedure_name",
       "observation_recording_timestamp",
@@ -1338,19 +1499,20 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' extracts each ZIP, merges rows and media into a timestamped folder under
 #' \code{dest_dir}, writes \code{observations.xlsx} and
 #' \code{observations.gpkg} at that folder root, and rearranges media into
-#' \code{survey_name/procedure_name/feature_id/} beside those files.
+#' \code{survey_name/procedure_name/feature_uuid/} beside those files.
 #'
 #' Large exports are paginated with \code{limit = 1000}. Pages are fetched
 #' with keyset cursors via \code{after_observation_id} when available,
 #' otherwise with \code{offset}, until an empty or short page is returned.
 #'
 #' The workbook has three sheets: a column guide, one wide-format row per
-#' feature, and long-format observations linked by a client-friendly
-#' \code{feature_id} such as \code{f001}. Wide-format survey-item
-#' columns use the exact \code{item_name}; repeated observations for the same
-#' feature and item are stored as a JSON array. The GeoPackage contains a
+#' feature, and long-format observations linked by \code{feature_uuid}.
+#' Wide-format survey-item columns use the exact \code{item_name} (case
+#' variants of taxonomic label items are collapsed to
+#' \code{"Taxonomic label"}); repeated observations for the same feature and
+#' item are stored as a JSON array of plain values. The GeoPackage contains a
 #' spatial \code{parent_features} layer and a related non-spatial \code{data}
-#' table linked by \code{feature_id}.
+#' table linked by \code{feature_uuid}.
 #'
 #' Returned observations (and the workbook data)
 #' drop identifiers/device noise (\code{project_id}, \code{project_system_id},
@@ -1365,9 +1527,12 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' the feature-level \code{feature_geometry}. When any \code{labels} JSON is
 #' present it is expanded into taxonomy/prediction columns (\code{class},
 #' \code{order}, ...) after \code{survey_observation}; otherwise those columns
-#' are omitted. The internal \code{feature_uuid} is replaced by
-#' \code{feature_id}. Media observations use the relative path
-#' \code{survey_name/procedure_name/feature_id/file_name}.
+#' are omitted. \code{label_id} is never kept. For \code{data_type = "label"},
+#' \code{survey_observation} is reduced to the plain taxonomic label text
+#' (JSON / escaped payloads are parsed and discarded). The API
+#' \code{feature_uuid} is kept as the stable feature key. Media observations
+#' use the relative path
+#' \code{survey_name/procedure_name/feature_uuid/file_name}.
 #'
 #' \code{data_type} may be omitted (download every type), one type, or several.
 #' Multiple types are fetched sequentially (the media ZIP build is server-side
