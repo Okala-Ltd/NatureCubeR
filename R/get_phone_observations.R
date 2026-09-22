@@ -142,6 +142,7 @@
   "item_uuid",
   "observation_id",
   "observation_uuid",
+  "feature_id"
 )
 
 .PHONE_OBS_COORD_COLS <- c("longitude", "latitude")
