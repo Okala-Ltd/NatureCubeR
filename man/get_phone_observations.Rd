@@ -43,19 +43,20 @@ export descriptor; this function then calls
 extracts the ZIP into a timestamped folder under \code{dest_dir}, reads
 \code{observations.csv}, writes \code{observations.xlsx} and
 \code{observations.gpkg} at that folder root, and rearranges media into
-\code{survey_name/procedure_name/feature_id/} beside those files.
+\code{survey_name/procedure_name/feature_uuid/} beside those files.
 
 Large exports are paginated with \code{limit = 1000}. Pages are fetched
 with keyset cursors via \code{after_observation_id} when available,
 otherwise with \code{offset}, until an empty or short page is returned.
 
 The workbook has three sheets: a column guide, one wide-format row per
-feature, and long-format observations linked by a client-friendly
-\code{feature_id} such as \code{f001}. Wide-format survey-item
-columns use the exact \code{item_name}; repeated observations for the same
-feature and item are stored as a JSON array. The GeoPackage contains a
+feature, and long-format observations linked by \code{feature_uuid}.
+Wide-format survey-item columns use the exact \code{item_name} (case
+variants of taxonomic label items are collapsed to
+\code{"Taxonomic label"}); repeated observations for the same feature and
+item are stored as a JSON array of plain values. The GeoPackage contains a
 spatial \code{parent_features} layer and a related non-spatial \code{data}
-table linked by \code{feature_id}.
+table linked by \code{feature_uuid}.
 
 Returned observations (and the workbook data)
 drop identifiers/device noise (\code{project_id}, \code{project_system_id},
@@ -70,9 +71,12 @@ timestamp columns dropped), \code{data} to \code{survey_observation}, and
 the feature-level \code{feature_geometry}. When any \code{labels} JSON is
 present it is expanded into taxonomy/prediction columns (\code{class},
 \code{order}, ...) after \code{survey_observation}; otherwise those columns
-are omitted. The internal \code{feature_uuid} is replaced by
-\code{feature_id}. Media observations use the relative path
-\code{survey_name/procedure_name/feature_id/file_name}.
+are omitted. \code{label_id} is never kept. For \code{data_type = "label"},
+\code{survey_observation} is reduced to the plain taxonomic label text
+(JSON / escaped payloads are parsed and discarded). The API
+\code{feature_uuid} is kept as the stable feature key. Media observations
+use the relative path
+\code{survey_name/procedure_name/feature_uuid/file_name}.
 
 \code{data_type} may be omitted (download every type), one type, or several.
 Multiple types are fetched sequentially (the media ZIP build is server-side
