@@ -285,41 +285,12 @@ get_procedure <- function(schema,
   system    <- schema$systems[[idx$system_index]]
   procedure <- system$procedures[[idx$procedure_index]]
 
-  item_nodes <- collect_item_nodes(procedure)
+  result <- .procedure_item_rows(procedure)
 
-  if (length(item_nodes) == 0) {
+  if (nrow(result) == 0L) {
     message("No items found in selected procedure.")
     return(invisible(tibble::tibble()))
   }
-
-  rows <- lapply(seq_along(item_nodes), function(i) {
-    node <- item_nodes[[i]]
-
-    # Resolve choices for choice-type items
-    choice_vals <- node$choices %||% node$options %||% node$items
-    choices_str <- ""
-    if (!is.null(choice_vals) && length(choice_vals) > 0) {
-      choice_labels <- vapply(choice_vals, function(ch) {
-        if (!is.list(ch)) return(as.character(ch))
-        lbl <- ch$label %||% ch$value %||% ch$name %||% ch$choice_label
-        if (is.null(lbl)) lbl <- as.character(ch)
-        as.character(lbl)
-      }, character(1))
-      choices_str <- paste(choice_labels, collapse = " | ")
-    }
-
-    tibble::tibble(
-      item_id          = if (!is.null(node$item_id)) as.integer(node$item_id) else NA_integer_,
-      item_uuid        = as.character(node$item_uuid),
-      item_name        = as.character(node$item_name %||% ""),
-      item_description = as.character(node$item_description %||% NA_character_),
-      data_type        = as.character(node$data_type %||% ""),
-      nullable         = if (!is.null(node$nullable)) as.logical(node$nullable) else NA,
-      choices          = choices_str
-    )
-  })
-
-  result <- dplyr::bind_rows(rows)
 
   sys_name  <- as.character(system$system_name %||% paste("System", idx$system_index))
   proc_name <- as.character(procedure$procedure_name %||% paste("Procedure", idx$procedure_index))
@@ -343,6 +314,222 @@ get_procedure <- function(schema,
   message("Items (", nrow(result), "):")
   print(result)
   return(invisible(out))
+}
+
+
+.procedure_item_rows <- function(procedure) {
+  item_nodes <- collect_item_nodes(procedure)
+  if (length(item_nodes) == 0L) {
+    return(tibble::tibble(
+      item_id = integer(),
+      item_uuid = character(),
+      item_name = character(),
+      item_description = character(),
+      data_type = character(),
+      nullable = logical(),
+      choices = character()
+    ))
+  }
+
+  dplyr::bind_rows(lapply(item_nodes, function(node) {
+    choice_vals <- node$choices %||% node$options %||% node$items
+    choices_str <- ""
+    if (!is.null(choice_vals) && length(choice_vals) > 0) {
+      choice_labels <- vapply(choice_vals, function(ch) {
+        if (!is.list(ch)) {
+          return(as.character(ch))
+        }
+        lbl <- ch$label %||% ch$value %||% ch$name %||% ch$choice_label
+        if (is.null(lbl)) {
+          lbl <- as.character(ch)
+        }
+        as.character(lbl)
+      }, character(1))
+      choices_str <- paste(choice_labels, collapse = " | ")
+    }
+
+    tibble::tibble(
+      item_id = if (!is.null(node$item_id)) as.integer(node$item_id) else NA_integer_,
+      item_uuid = as.character(node$item_uuid),
+      item_name = as.character(node$item_name %||% ""),
+      item_description = as.character(node$item_description %||% NA_character_),
+      data_type = as.character(node$data_type %||% ""),
+      nullable = if (!is.null(node$nullable)) as.logical(node$nullable) else NA,
+      choices = choices_str
+    )
+  }))
+}
+
+
+.procedure_definitions_column_guide <- function(data) {
+  descriptions <- c(
+    project_id = "NatureCube project ID for the authenticated API key.",
+    system_index = "1-based index of the survey kit (system) in the project schema.",
+    system_name = "Survey kit name.",
+    system_id = "NatureCube project_system_id for the survey kit.",
+    procedure_index = "1-based index of the procedure within its survey kit.",
+    procedure_name = "Procedure / form name.",
+    procedure_id = "NatureCube procedure_id.",
+    form = "Whether the procedure is configured as a form (TRUE/FALSE).",
+    item_id = "NatureCube item ID when present.",
+    item_uuid = "Stable UUID of the procedure item (use this when uploading observations).",
+    item_name = "Display name of the procedure item (column header in field data).",
+    item_description = "Short description of the item from the project schema.",
+    data_type = paste(
+      "Item data type, such as text, numeric, choice, label,",
+      "phone-photo, phone-video, or phone-audio."
+    ),
+    nullable = "Whether the item is optional (TRUE) or required (FALSE) when known.",
+    choices = paste(
+      "Allowed values for choice items, separated by ' | '.",
+      "Empty for non-choice types. The API schema does not store units",
+      "or sign conventions for numeric items."
+    )
+  )
+  columns <- names(data)
+  description <- unname(descriptions[columns])
+  description[is.na(description)] <- "Field returned by the NatureCube project schema."
+  tibble::tibble(column = columns, description = description)
+}
+
+
+#' @title Export all procedure definitions to Excel
+#'
+#' @description
+#' Downloads the project schema for \code{hdr} and writes every system /
+#' procedure item definition to an Excel workbook with two sheets:
+#' \enumerate{
+#'   \item \strong{Column description} — meanings of each data column.
+#'   \item \strong{Procedure definitions} — one row per procedure item
+#'     (names, types, nullability, and choice lists).
+#' }
+#'
+#' The API schema does not include units or sign conventions for numeric
+#' items; those must come from the field protocol.
+#'
+#' @param hdr Auth headers from \link{auth_headers} or \link{auth_headers_dev}.
+#' @param path Optional output \code{.xlsx} path. When \code{NULL} (default),
+#'   writes \code{procedure-definitions-YYYYMMDD-HHMMSS.xlsx} in the current
+#'   working directory.
+#'
+#' @return A named list (invisibly) with \code{path} and \code{definitions}
+#'   (the tibble written to the data sheet).
+#'
+#' @examples
+#' \dontrun{
+#'   hdr <- auth_headers("your_api_key")
+#'   export_procedure_definitions(hdr)
+#'   export_procedure_definitions(hdr, path = "ivindo_procedures.xlsx")
+#' }
+#'
+#' @author Cristobal Salamé
+#' @export
+export_procedure_definitions <- function(hdr, path = NULL) {
+  schema <- get_project_systems(hdr)
+  if (is.null(schema$systems) || length(schema$systems) == 0L) {
+    stop("No systems found in project schema.")
+  }
+
+  project_id <- if (!is.null(schema$project_id)) {
+    as.integer(schema$project_id)
+  } else {
+    NA_integer_
+  }
+
+  rows <- list()
+  for (si in seq_along(schema$systems)) {
+    system <- schema$systems[[si]]
+    sys_name <- as.character(system$system_name %||% paste("System", si))
+    sys_id <- if (!is.null(system$project_system_id)) {
+      as.integer(system$project_system_id)
+    } else {
+      NA_integer_
+    }
+    procedures <- system$procedures %||% list()
+    if (length(procedures) == 0L) {
+      next
+    }
+
+    for (pi in seq_along(procedures)) {
+      procedure <- procedures[[pi]]
+      proc_name <- as.character(
+        procedure$procedure_name %||% paste("Procedure", pi)
+      )
+      proc_id <- if (!is.null(procedure$procedure_id)) {
+        as.integer(procedure$procedure_id)
+      } else {
+        NA_integer_
+      }
+      proc_form <- if (!is.null(procedure$form)) {
+        as.logical(procedure$form)
+      } else {
+        NA
+      }
+
+      items <- .procedure_item_rows(procedure)
+      if (nrow(items) == 0L) {
+        next
+      }
+
+      rows[[length(rows) + 1L]] <- dplyr::bind_cols(
+        tibble::tibble(
+          project_id = project_id,
+          system_index = as.integer(si),
+          system_name = sys_name,
+          system_id = sys_id,
+          procedure_index = as.integer(pi),
+          procedure_name = proc_name,
+          procedure_id = proc_id,
+          form = proc_form
+        ),
+        items
+      )
+    }
+  }
+
+  definitions <- if (length(rows) == 0L) {
+    tibble::tibble(
+      project_id = integer(),
+      system_index = integer(),
+      system_name = character(),
+      system_id = integer(),
+      procedure_index = integer(),
+      procedure_name = character(),
+      procedure_id = integer(),
+      form = logical(),
+      item_id = integer(),
+      item_uuid = character(),
+      item_name = character(),
+      item_description = character(),
+      data_type = character(),
+      nullable = logical(),
+      choices = character()
+    )
+  } else {
+    dplyr::bind_rows(rows)
+  }
+
+  if (is.null(path)) {
+    stamp <- format(Sys.time(), "%Y%m%d-%H%M%S")
+    path <- file.path(getwd(), paste0("procedure-definitions-", stamp, ".xlsx"))
+  }
+  path <- path.expand(path)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+
+  guide <- .procedure_definitions_column_guide(definitions)
+  writexl::write_xlsx(
+    list(
+      "Column description" = guide,
+      "Procedure definitions" = definitions
+    ),
+    path = path
+  )
+
+  message(
+    "Wrote ", nrow(definitions), " procedure item(s) across ",
+    dplyr::n_distinct(definitions$procedure_id), " procedure(s) to ", path
+  )
+  invisible(list(path = path, definitions = definitions))
 }
 
 
