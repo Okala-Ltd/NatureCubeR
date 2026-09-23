@@ -12,7 +12,8 @@ SIT must be used until this endpoint is on production
 (\link{auth_headers_dev}).}
 
 \item{procedure}{Named list returned by \link{get_procedure}. Must include
-\code{project_id} and \code{procedure_id}.}
+\code{project_id}, \code{procedure_id}, \code{system_id},
+\code{system_name}, and \code{procedure_name}.}
 
 \item{data_type}{Optional character. One or more of \code{phone-photo},
 \code{phone-video}, \code{phone-audio}, \code{choice}, \code{text},
@@ -20,16 +21,16 @@ SIT must be used until this endpoint is on production
 downloaded.}
 
 \item{dest_dir}{Optional parent directory for the timestamped export folder.
-When \code{NULL} (default), uses the current working directory. Each media
-download creates a new \code{phone-obs-...} folder that is never
-overwritten.}
+When \code{NULL} (default), uses the current working directory. Each call
+creates a new \code{{system_id}_{system_name}_{timestamp}/} tree that is
+never overwritten.}
 }
 \value{
-If a single \code{data_type} is requested, a tibble (non-media)
-  or a named list with \code{observations}, \code{dest_dir},
-  \code{excel_path}, \code{geopackage_path}, \code{files}, and export
-  metadata (media). If several types are requested (including the all-types
-  default), a named list of those results.
+A named list per requested \code{data_type} with
+  \code{observations}, \code{dest_dir} (procedure folder),
+  \code{excel_path}, \code{geopackage_path}, \code{item_dirs}, and related
+  export metadata. If a single type is requested, that list is returned
+  directly (not wrapped in an outer list).
 }
 \description{
 Downloads observations for a procedure from
@@ -41,14 +42,22 @@ API returns \code{X-Next-Observation-Id}). Pages are combined automatically
 so callers still receive one tibble / export folder.
 
 Non-media types (\code{choice}, \code{text}, \code{numeric}, \code{label})
-stream a CSV that is returned as a tibble. Media types
-(\code{phone-photo}, \code{phone-video}, \code{phone-audio}) return a JSON
-export descriptor per page; this function then calls
-\link{download_phone_observation_export}, follows the redirect to GCS,
-extracts each ZIP, merges rows and media into a timestamped folder under
-\code{dest_dir}, writes \code{observations.xlsx} and
-\code{observations.gpkg} at that folder root, and rearranges media into
-\code{survey_name/procedure_name/feature_uuid/} beside those files.
+stream a CSV; media types (\code{phone-photo}, \code{phone-video},
+\code{phone-audio}) return a JSON export descriptor per page, then this
+function calls \link{download_phone_observation_export}, follows the
+redirect to GCS, and extracts each ZIP. All requested types share one
+timestamped export tree under \code{dest_dir}:
+\preformatted{
+{system_id}_{system_name}_{timestamp}/
+  {procedure_id}_{procedure_name}/
+    {item_name}/
+      observations.xlsx
+      observations.gpkg
+      {data_type}/          # media files only, when present
+}
+Empty types (including media with no files) still create the matching
+item folder(s) and an empty \code{observations.xlsx}, using procedure item
+names when no rows are returned.
 
 Large exports are paginated with \code{limit = 1000}. Pages are fetched
 with keyset cursors via \code{after_observation_id} when available,
@@ -80,8 +89,7 @@ are omitted. \code{label_id} is never kept. For \code{data_type = "label"},
 \code{survey_observation} is reduced to the plain taxonomic label text
 (JSON / escaped payloads are parsed and discarded). The API
 \code{feature_uuid} is kept as the stable feature key. Media observations
-use the relative path
-\code{survey_name/procedure_name/feature_uuid/file_name}.
+use the relative path \code{data_type/file_name} inside the item folder.
 
 \code{data_type} may be omitted (download every type), one type, or several.
 Multiple types are fetched sequentially (the media ZIP build is server-side

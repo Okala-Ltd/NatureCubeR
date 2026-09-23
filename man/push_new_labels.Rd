@@ -21,8 +21,8 @@ Required columns are \code{segment_record_id_fk} (integer) and
 records sent per request.}
 }
 \value{
-The API response from the final chunk, typically a list containing the
-message \code{"Labels updated successfully"}.
+The API response from the final chunk, typically a list containing
+  the message \code{"Labels updated successfully"}.
 }
 \description{
 Push new labels to the platform in chunks. The endpoint expects a JSON

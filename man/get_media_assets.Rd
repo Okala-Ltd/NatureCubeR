@@ -8,6 +8,7 @@ get_media_assets(
   hdr,
   datatype = c("video", "audio", "image", "eDNA"),
   psrID,
+  record_count = NULL,
   max_workers = MEDIA_MAX_WORKERS
 )
 }
@@ -22,8 +23,12 @@ c("video","audio","image","eDNA")}
 \code{stations$project_system_record_id}). Safe to pass every station in
 a project.}
 
+\item{record_count}{Optional integer vector, same length as \code{psrID}.
+When provided, stations with \code{record_count == 0} are skipped (no API
+call). Pass \code{stations$record_count} from \link{get_station_info}.}
+
 \item{max_workers}{Maximum number of stations to fetch concurrently.
-Defaults to \code{3}. Set to \code{1} for sequential downloads.}
+Defaults to \code{4}. Set to \code{1} for sequential downloads.}
 }
 \value{
 A tibble of media assets for the specified project system record
@@ -32,8 +37,9 @@ A tibble of media assets for the specified project system record
 Get all media assets associated with your project for data types
 c("video","audio","image").
 
-Each project system record ID is queried separately. Up to three stations are
-fetched concurrently (the API rate-limits higher concurrency with HTTP 429).
+Each project system record ID is queried separately. Several stations are
+fetched concurrently (default \code{4}); the API rate-limits higher
+concurrency with HTTP 429, which is retried with backoff.
 
 Pagination prefers keyset cursors via \code{after_segment_record_id} when
 the backend supports them, falling back to offset pagination. An empty page
@@ -41,7 +47,12 @@ ends pagination for that station.
 }
 \examples{
 \dontrun{
-  assets <- get_media_assets(headers, datatype = "video", psrID = stations$project_system_record_id)
+  assets <- get_media_assets(
+    headers,
+    datatype = "video",
+    psrID = stations$project_system_record_id,
+    record_count = stations$record_count
+  )
 }
 
 }
