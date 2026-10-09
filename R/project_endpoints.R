@@ -296,7 +296,7 @@ plot_stations <- function(geojson_response) {
     wave_idx <- i:wave_end
     wave_results <- parallel::parLapply(cl, wave_idx, function(j) {
       hdr_local <- list(key = api_key, root = httr2::request(api_root))
-      getFromNamespace(".fetch_media_assets_for_psr", "NatureCubeR")(
+      utils::getFromNamespace(".fetch_media_assets_for_psr", "NatureCubeR")(
         hdr = hdr_local,
         datatype = datatype,
         psr_id = as.integer(psrID[[j]]),
@@ -357,7 +357,7 @@ get_media_assets <- function(hdr,
                              datatype = c("video", "audio", "image", "eDNA"),
                              psrID,
                              record_count = NULL,
-                             max_workers = MEDIA_MAX_WORKERS) {
+                             max_workers = 4L) {
   psrID <- as.integer(psrID)
   if (length(psrID) == 0L) {
     return(tibble::tibble())

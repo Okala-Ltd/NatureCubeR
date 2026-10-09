@@ -1,13 +1,15 @@
 Package: NatureCubeR
 Type: Package
 Title: API wrapper around the NatureCube dashboard interface
-Version: 1.1.14
+Version: 3.9.1
 Authors@R: 
     person("Adam", "Varley", , "adam@okala.io", role = c("aut", "cre"))
 Description: Allows basic reading and writing of data to and from your 
     project on the NatureCube dashboard.
 License: Apache License (>= 2.0) | file LICENSE
 Encoding: UTF-8
+Depends:
+    R (>= 4.1.0)
 Imports:
     httr2,
     jsonlite,
@@ -22,5 +24,8 @@ Imports:
     uuid,
     cli,
     readr,
-    writexl
+    writexl,
+    rlang
+Suggests:
+    testthat (>= 3.0.0)
 Config/roxygen2/version: 8.0.0

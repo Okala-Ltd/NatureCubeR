@@ -406,9 +406,11 @@ correct_timestamps <- function(media_metadata) {
   }
 
   media_metadata <- media_metadata %>%
-    dplyr::mutate(timestamp = lubridate::as_datetime(timestamp),
-                  installation_timestamp = lubridate::as_datetime(installation_timestamp),
-                  removal_timestamp = lubridate::as_datetime(removal_timestamp))
+    dplyr::mutate(
+      timestamp = lubridate::as_datetime(.data$timestamp),
+      installation_timestamp = lubridate::as_datetime(.data$installation_timestamp),
+      removal_timestamp = lubridate::as_datetime(.data$removal_timestamp)
+    )
 
   # --- Check for missing values (also catches timestamps that failed to
   # parse above, since as_datetime() turns those into NA) ---
@@ -438,9 +440,8 @@ correct_timestamps <- function(media_metadata) {
 
   # --- Sequential correction: sort by device/file, then chain per device ---
   media_metadata %>%
-    dplyr::arrange(device_id, file_name)  %>%
-    dplyr::group_by(device_id)  %>%
-    dplyr::group_modify(~ .correct_device_timestamps(.x))  %>%
+    dplyr::arrange(.data$device_id, .data$file_name) %>%
+    dplyr::group_by(.data$device_id) %>%
+    dplyr::group_modify(~ .correct_device_timestamps(.x)) %>%
     dplyr::ungroup()
-    
 }

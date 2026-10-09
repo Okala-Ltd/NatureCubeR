@@ -20,17 +20,19 @@ SIT must be used until this endpoint is on production
 \code{numeric}, \code{label}. When \code{NULL} (default), every type is
 downloaded.}
 
-\item{dest_dir}{Optional parent directory for the timestamped export folder.
-When \code{NULL} (default), uses the current working directory. Each call
-creates a new \code{{system_id}_{system_name}_{timestamp}/} tree that is
-never overwritten.}
+\item{dest_dir}{Optional parent directory for the export tree. When
+\code{NULL} (default), uses the current working directory. The procedure
+folder is \code{dest_dir/{system_id}_{system_name}/{procedure_id}_{procedure_name}/}.}
 }
 \value{
-A named list per requested \code{data_type} with
-  \code{observations}, \code{dest_dir} (procedure folder),
-  \code{excel_path}, \code{geopackage_path}, \code{item_dirs}, and related
-  export metadata. If a single type is requested, that list is returned
-  directly (not wrapped in an outer list).
+A named list with \code{observations} (one tidy tibble covering
+  every requested type), \code{dest_dir} (procedure folder),
+  \code{excel_path}, \code{geopackage_path} (\code{NULL} when there are no
+  coordinates), \code{media_dir} (\code{NULL} when no media),
+  \code{media_files}, \code{media_unreferenced} (files shipped in the
+  export ZIP without a matching observation row; kept in \code{media/}),
+  \code{row_count}, \code{media_count}, and \code{by_type} (per-type row /
+  media counts).
 }
 \description{
 Downloads observations for a procedure from
@@ -45,23 +47,30 @@ Non-media types (\code{choice}, \code{text}, \code{numeric}, \code{label})
 stream a CSV; media types (\code{phone-photo}, \code{phone-video},
 \code{phone-audio}) return a JSON export descriptor per page, then this
 function calls \link{download_phone_observation_export}, follows the
-redirect to GCS, and extracts each ZIP. All requested types share one
-timestamped export tree under \code{dest_dir}:
+redirect to GCS, and extracts each ZIP. Every requested type is combined
+into a single workbook per procedure, written under \code{dest_dir}:
 \preformatted{
-{system_id}_{system_name}_{timestamp}/
+{system_id}_{system_name}/
   {procedure_id}_{procedure_name}/
-    {item_name}/
-      observations.xlsx
-      observations.gpkg
-      {data_type}/          # media files only, when present
+    observations.xlsx     # all data types, long + wide + column guide
+    observations.gpkg
+    media/                # media files, only when present
 }
-Empty types (including media with no files) still create the matching
-item folder(s) and an empty \code{observations.xlsx}, using procedure item
-names when no rows are returned.
+The tree is stable (no timestamp), so looping over procedures of a system
+fills one system folder. Re-running a procedure overwrites its workbook
+and GeoPackage and adds any new media files. A procedure with no
+observations still gets its folder and an empty \code{observations.xlsx}.
+
+Media exports also return the non-media observations of the same
+features, so rows are de-duplicated by observation before the workbook is
+written.
 
 Large exports are paginated with \code{limit = 1000}. Pages are fetched
 with keyset cursors via \code{after_observation_id} when available,
-otherwise with \code{offset}, until an empty or short page is returned.
+otherwise with \code{offset}. A short page is followed when the response
+still carries \code{X-Next-Observation-Id} (media ZIPs are size-capped);
+paging stops on an empty page, a repeated cursor, or once \code{offset}
+reaches \code{X-Total-Count}.
 
 The workbook has three sheets: a column guide, one wide-format row per
 feature, and long-format observations linked by \code{feature_uuid}.
@@ -89,7 +98,11 @@ are omitted. \code{label_id} is never kept. For \code{data_type = "label"},
 \code{survey_observation} is reduced to the plain taxonomic label text
 (JSON / escaped payloads are parsed and discarded). The API
 \code{feature_uuid} is kept as the stable feature key. Media observations
-use the relative path \code{data_type/file_name} inside the item folder.
+use the relative path \code{media/file_name} inside the procedure folder.
+When one observation lists several files (\code{path/a.jpg | path/b.jpg}),
+each file becomes its own row so none is left unreferenced. A label that
+is only a scientific name copies class, order, family, genus, species and
+common name from another row with the same name.
 
 \code{data_type} may be omitted (download every type), one type, or several.
 Multiple types are fetched sequentially (the media ZIP build is server-side

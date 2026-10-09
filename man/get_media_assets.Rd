@@ -9,7 +9,7 @@ get_media_assets(
   datatype = c("video", "audio", "image", "eDNA"),
   psrID,
   record_count = NULL,
-  max_workers = MEDIA_MAX_WORKERS
+  max_workers = 4L
 )
 }
 \arguments{

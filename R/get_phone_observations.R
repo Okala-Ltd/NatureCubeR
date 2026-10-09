@@ -87,50 +87,41 @@
   list(project_id = project_id, procedure_id = procedure_id)
 }
 
-# Export layout:
-#   {system_id}_{system_name}_{timestamp}/
+# Export layout (stable across calls, so looping over procedures fills one
+# tree; re-running a procedure overwrites its workbook and tops up media):
+#   {system_id}_{system_name}/
 #     {procedure_id}_{procedure_name}/
-#       {item_name}/
-#         observations.xlsx
-#         observations.gpkg
-#         {data_type}/   (media files only, when present)
-.phone_obs_export_root <- function(dest_dir, procedure) {
-  stamp <- format(Sys.time(), "%Y%m%d-%H%M%S")
+#       observations.xlsx   (every data type in one workbook)
+#       observations.gpkg
+#       media/              (media files, only when present)
+.PHONE_OBS_MEDIA_DIR <- "media"
+
+.phone_obs_system_dir <- function(dest_dir, procedure) {
   sys_id <- procedure$system_id %||% "NA"
   sys_name <- .sanitize_dir_token(procedure$system_name %||% "system")
-  base <- file.path(
-    dest_dir,
-    paste(sys_id, sys_name, stamp, sep = "_")
-  )
-  if (!dir.exists(base)) {
-    return(base)
-  }
-  paste0(base, "-", as.integer(Sys.time()))
+  file.path(dest_dir, paste(sys_id, sys_name, sep = "_"))
 }
 
-.phone_obs_procedure_dir <- function(export_root, procedure) {
+.phone_obs_procedure_dir <- function(system_dir, procedure) {
   proc_id <- procedure$procedure_id %||% "NA"
   proc_name <- .sanitize_dir_token(procedure$procedure_name %||% "procedure")
-  file.path(export_root, paste(proc_id, proc_name, sep = "_"))
+  file.path(system_dir, paste(proc_id, proc_name, sep = "_"))
 }
 
-.phone_obs_item_dir <- function(procedure_dir, item_name) {
-  file.path(procedure_dir, .sanitize_dir_token(item_name))
-}
-
-.phone_obs_item_names_for_type <- function(procedure, data_type) {
-  items <- procedure$items
-  if (!is.data.frame(items) || nrow(items) == 0L ||
-      !all(c("item_name", "data_type") %in% names(items))) {
-    return(.sanitize_dir_token(data_type %||% "Observation"))
+# Media exports also return the non-media observations of the same features,
+# so rows overlap across data types. Keep one row per observation.
+.dedupe_phone_obs_rows <- function(df) {
+  if (!is.data.frame(df) || nrow(df) == 0L) {
+    return(df)
   }
-  match <- !is.na(items$data_type) & items$data_type == data_type
-  names <- .normalize_phone_obs_item_name(items$item_name[match])
-  names <- unique(names[!is.na(names) & nzchar(names)])
-  if (length(names) == 0L) {
-    return(.sanitize_dir_token(data_type %||% "Observation"))
+  key <- intersect(c("observation_uuid", "observation_id"), names(df))
+  if (length(key) == 0L) {
+    return(dplyr::distinct(df))
   }
-  names
+  key <- key[[1]]
+  id <- as.character(df[[key]])
+  keep <- is.na(id) | !nzchar(id) | !duplicated(id)
+  df[keep, , drop = FALSE]
 }
 
 .phone_obs_token_from_url <- function(download_url) {
@@ -399,6 +390,76 @@
   coordinates
 }
 
+# Label rows sometimes carry only the scientific name ("Pan troglodytes")
+# with no labels JSON. Copy class/order/family/genus/species/common_name from
+# another row of the same name, and otherwise split a binomial into genus
+# and species.
+.backfill_phone_obs_taxonomy <- function(df) {
+  if (!is.data.frame(df) || nrow(df) == 0L || !("data_type" %in% names(df))) {
+    return(df)
+  }
+  is_label <- !is.na(df$data_type) & df$data_type == "label"
+  if (!any(is_label)) {
+    return(df)
+  }
+  for (col in .PHONE_OBS_LABEL_COLS) {
+    if (!(col %in% names(df))) {
+      df[[col]] <- if (col %in% c("number_of_individuals", "prediction_accuracy")) {
+        NA_real_
+      } else {
+        NA_character_
+      }
+    }
+  }
+  key <- rep(NA_character_, nrow(df))
+  if ("label" %in% names(df)) {
+    key <- trimws(as.character(df$label))
+  }
+  if ("survey_observation" %in% names(df)) {
+    obs <- trimws(as.character(df$survey_observation))
+    use <- is.na(key) | !nzchar(key)
+    key[use] <- obs[use]
+  }
+  blank <- function(x) {
+    is.na(x) | !nzchar(as.character(x))
+  }
+  rank_cols <- c("class", "order", "family", "genus", "species", "common_name")
+  donors <- new.env(parent = emptyenv())
+  for (i in which(is_label & !is.na(key) & nzchar(key))) {
+    bucket <- donors[[key[[i]]]]
+    if (is.null(bucket)) {
+      bucket <- list()
+    }
+    for (col in rank_cols) {
+      val <- df[[col]][[i]]
+      if (is.null(bucket[[col]]) && !blank(val)) {
+        bucket[[col]] <- as.character(val)
+      }
+    }
+    donors[[key[[i]]]] <- bucket
+  }
+  for (i in which(is_label & !is.na(key) & nzchar(key))) {
+    bucket <- donors[[key[[i]]]]
+    if (!is.null(bucket)) {
+      for (col in names(bucket)) {
+        if (blank(df[[col]][[i]])) {
+          df[[col]][[i]] <- bucket[[col]]
+        }
+      }
+    }
+    if (blank(df$label[[i]])) {
+      df$label[[i]] <- key[[i]]
+    }
+    if (blank(df$species[[i]])) {
+      df$species[[i]] <- key[[i]]
+    }
+    if (blank(df$genus[[i]]) && grepl(" ", key[[i]], fixed = TRUE)) {
+      df$genus[[i]] <- strsplit(key[[i]], " ", fixed = TRUE)[[1]][[1]]
+    }
+  }
+  df
+}
+
 # Drop noise columns, expand labels when present, rename client-facing fields,
 # derive feature coordinates, and put surveyor last.
 .tidy_phone_observations <- function(df) {
@@ -540,6 +601,7 @@
       df$survey_observation <- cleaned
     }
 
+    df <- .expand_phone_obs_media_rows(df)
     media <- df$data_type %in% .PHONE_OBS_MEDIA_TYPES
     has_file <- media & !is.na(df$survey_observation) &
       nzchar(as.character(df$survey_observation))
@@ -549,12 +611,18 @@
         "",
         as.character(df$survey_observation[has_file])
       ))
-      type <- as.character(df$data_type[has_file])
-      df$survey_observation[has_file] <- .phone_obs_media_relpath(
-        type,
-        file_name
-      )
+      df$survey_observation[has_file] <- .phone_obs_media_relpath(file_name)
     }
+  }
+
+  df <- .backfill_phone_obs_taxonomy(df)
+  tax_present <- intersect(.PHONE_OBS_LABEL_COLS, names(df))
+  if (!add_tax && length(tax_present) > 0L && any(vapply(
+    df[tax_present],
+    function(x) any(!is.na(x) & nzchar(as.character(x))),
+    logical(1)
+  ))) {
+    add_tax <- TRUE
   }
 
   nm <- names(df)
@@ -589,7 +657,9 @@
   df[, ordered, drop = FALSE]
 }
 
-.phone_obs_wide_format <- function(long_data) {
+# `item_order` (optional) lists procedure item names in the order the survey
+# item columns should appear; unknown items follow in first-seen order.
+.phone_obs_wide_format <- function(long_data, item_order = NULL) {
   if (!is.data.frame(long_data) || nrow(long_data) == 0L ||
       !("feature_uuid" %in% names(long_data))) {
     return(tibble::as_tibble(long_data))
@@ -662,6 +732,13 @@
   first_rows <- match(feature_uuids, long_data$feature_uuid)
   wide <- long_data[first_rows, base_cols, drop = FALSE]
   observation_cols <- unique(unlist(lapply(observations, names), use.names = FALSE))
+  if (!is.null(item_order)) {
+    preferred <- unique(.normalize_phone_obs_item_name(item_order))
+    observation_cols <- c(
+      intersect(preferred, observation_cols),
+      setdiff(observation_cols, preferred)
+    )
+  }
   for (column in observation_cols) {
     wide[[column]] <- NA_character_
   }
@@ -691,7 +768,7 @@
     data_type = "Observation data type, such as phone-photo, numeric, or label.",
     survey_observation = paste(
       "Recorded value (plain taxonomic label text for data_type='label'),",
-      "or media path data_type/file_name relative to the item folder."
+      "or media path media/file_name relative to this workbook."
     ),
     observation_notes = "User-provided notes for the observation.",
     class = "Taxonomic class from procedure labels.",
@@ -723,21 +800,51 @@
   )
 }
 
-.phone_obs_media_relpath <- function(data_type, file_name) {
-  clean <- function(x, fallback) {
-    x <- as.character(x)
-    x[is.na(x) | !nzchar(x)] <- fallback
-    .sanitize_dir_token(x)
+# One observation can list several files as "path/a.jpg | path/b.jpg".
+# Keep one row per file so every downloaded file stays referenced.
+.expand_phone_obs_media_rows <- function(df) {
+  if (!is.data.frame(df) || nrow(df) == 0L ||
+      !all(c("data_type", "survey_observation") %in% names(df))) {
+    return(df)
   }
-  paste(clean(data_type, "media"), file_name, sep = "/")
+  media <- !is.na(df$data_type) & df$data_type %in% .PHONE_OBS_MEDIA_TYPES
+  value <- as.character(df$survey_observation)
+  multi <- media & !is.na(value) & grepl("|", value, fixed = TRUE)
+  if (!any(multi)) {
+    return(df)
+  }
+  parts <- vector("list", nrow(df))
+  parts[multi] <- strsplit(value[multi], "\\s*\\|\\s*")
+  n_parts <- rep(1L, nrow(df))
+  n_parts[multi] <- vapply(parts[multi], function(x) {
+    sum(nzchar(trimws(x)))
+  }, integer(1))
+  n_parts[n_parts < 1L] <- 1L
+  if (!any(n_parts > 1L)) {
+    return(df)
+  }
+  src <- rep(seq_len(nrow(df)), n_parts)
+  out <- df[src, , drop = FALSE]
+  for (i in which(n_parts > 1L)) {
+    bits <- trimws(parts[[i]])
+    bits <- bits[nzchar(bits)]
+    out$survey_observation[src == i] <- bits
+  }
+  out
 }
 
+.phone_obs_media_relpath <- function(file_name) {
+  paste(.PHONE_OBS_MEDIA_DIR, as.character(file_name), sep = "/")
+}
+
+# Move staged media into dest_dir/media/. Files referenced by an observation
+# row are matched by basename; any remaining files from the export ZIP (the
+# server occasionally ships media without a matching CSV row) are kept too so
+# nothing that was downloaded is discarded.
 .relocate_phone_obs_media <- function(observations, extract_dir, dest_dir) {
-  if (!is.data.frame(observations) || nrow(observations) == 0L) {
-    return(invisible(NULL))
-  }
-  if (!all(c("data_type", "survey_observation") %in% names(observations))) {
-    return(invisible(NULL))
+  counts <- list(referenced = 0L, unreferenced = 0L)
+  if (!dir.exists(extract_dir)) {
+    return(invisible(counts))
   }
 
   extracted <- list.files(extract_dir, recursive = TRUE, full.names = TRUE)
@@ -748,47 +855,64 @@
     ignore.case = TRUE
   )]
   if (length(extracted) == 0L) {
-    return(invisible(NULL))
+    return(invisible(counts))
   }
   by_name <- split(extracted, basename(extracted))
 
-  media <- observations$data_type %in% .PHONE_OBS_MEDIA_TYPES
-  paths <- as.character(observations$survey_observation)
-  media <- media & !is.na(paths) & nzchar(paths)
-
-  for (i in which(media)) {
-    rel <- paths[[i]]
-    file_name <- basename(rel)
-    candidates <- by_name[[file_name]]
-    if (is.null(candidates) || length(candidates) == 0L) {
-      next
-    }
-    src <- candidates[[1]]
-    by_name[[file_name]] <- candidates[-1]
-    dest <- file.path(dest_dir, rel)
+  move_file <- function(src, dest) {
     dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
     same <- file.exists(dest) &&
       identical(
         normalizePath(src, winslash = "/", mustWork = FALSE),
         normalizePath(dest, winslash = "/", mustWork = FALSE)
       )
-    if (!same) {
-      ok <- file.rename(src, dest)
-      if (!isTRUE(ok)) {
-        file.copy(src, dest, overwrite = TRUE)
-        unlink(src)
+    if (same) {
+      return(invisible(TRUE))
+    }
+    ok <- file.rename(src, dest)
+    if (!isTRUE(ok)) {
+      ok <- file.copy(src, dest, overwrite = TRUE)
+      unlink(src)
+    }
+    invisible(isTRUE(ok))
+  }
+
+  has_rows <- is.data.frame(observations) && nrow(observations) > 0L &&
+    all(c("data_type", "survey_observation") %in% names(observations))
+  if (has_rows) {
+    media <- observations$data_type %in% .PHONE_OBS_MEDIA_TYPES
+    paths <- as.character(observations$survey_observation)
+    media <- media & !is.na(paths) & nzchar(paths)
+
+    for (i in which(media)) {
+      rel <- paths[[i]]
+      file_name <- basename(rel)
+      candidates <- by_name[[file_name]]
+      if (is.null(candidates) || length(candidates) == 0L) {
+        next
+      }
+      by_name[[file_name]] <- candidates[-1]
+      if (move_file(candidates[[1]], file.path(dest_dir, rel))) {
+        counts$referenced <- counts$referenced + 1L
       }
     }
   }
-  invisible(NULL)
+
+  leftover <- unlist(by_name, use.names = FALSE)
+  for (src in leftover) {
+    if (move_file(src, file.path(dest_dir, .phone_obs_media_relpath(basename(src))))) {
+      counts$unreferenced <- counts$unreferenced + 1L
+    }
+  }
+  invisible(counts)
 }
 
-# Write one item folder with workbook (+ gpkg when spatial) and optional media.
-.export_phone_obs_by_item <- function(observations,
-                                      procedure_dir,
-                                      staging_dir = NULL,
-                                      procedure = NULL,
-                                      data_type = NULL) {
+# Write the procedure folder: one workbook with every data type, a GeoPackage
+# when coordinates exist, and media files moved from staging into media/.
+.export_phone_obs_procedure <- function(observations,
+                                        procedure_dir,
+                                        staging_dir = NULL,
+                                        item_order = NULL) {
   dir.create(procedure_dir, recursive = TRUE, showWarnings = FALSE)
   observations <- if (is.data.frame(observations)) {
     tibble::as_tibble(observations)
@@ -796,60 +920,42 @@
     tibble::tibble()
   }
 
-  has_item_col <- nrow(observations) > 0L && "item_name" %in% names(observations)
-  if (has_item_col) {
-    observations$item_name <- .normalize_phone_obs_item_name(observations$item_name)
-    item_names <- unique(observations$item_name)
-  } else if (nrow(observations) > 0L) {
-    item_names <- "Observation"
-  } else {
-    item_names <- .phone_obs_item_names_for_type(procedure, data_type)
+  media_counts <- list(referenced = 0L, unreferenced = 0L)
+  if (!is.null(staging_dir) && dir.exists(staging_dir)) {
+    media_counts <- .relocate_phone_obs_media(observations, staging_dir, procedure_dir)
   }
 
-  excel_paths <- character()
-  gpkg_paths <- character()
-  item_dirs <- character()
+  excel_path <- file.path(procedure_dir, "observations.xlsx")
+  .write_phone_obs_workbook(observations, excel_path, item_order = item_order)
 
-  for (item in item_names) {
-    item_dir <- .phone_obs_item_dir(procedure_dir, item)
-    dir.create(item_dir, recursive = TRUE, showWarnings = FALSE)
-    item_dirs <- c(item_dirs, item_dir)
-
-    item_rows <- if (has_item_col) {
-      observations[observations$item_name == item, , drop = FALSE]
-    } else if (nrow(observations) > 0L) {
-      observations
-    } else {
-      observations[0L, , drop = FALSE]
+  geopackage_path <- NULL
+  if (nrow(observations) > 0L) {
+    gpkg_path <- file.path(procedure_dir, "observations.gpkg")
+    written <- .write_phone_obs_geopackage(observations, gpkg_path)
+    if (!is.null(written)) {
+      geopackage_path <- as.character(written)
     }
+  }
 
-    if (!is.null(staging_dir) && nrow(item_rows) > 0L) {
-      .relocate_phone_obs_media(item_rows, staging_dir, item_dir)
-    }
-
-    excel_path <- file.path(item_dir, "observations.xlsx")
-    .write_phone_obs_workbook(item_rows, excel_path)
-    excel_paths <- c(excel_paths, excel_path)
-
-    if (nrow(item_rows) > 0L) {
-      gpkg_path <- file.path(item_dir, "observations.gpkg")
-      written <- .write_phone_obs_geopackage(item_rows, gpkg_path)
-      if (!is.null(written)) {
-        gpkg_paths <- c(gpkg_paths, as.character(written))
-      }
-    }
+  media_dir <- file.path(procedure_dir, .PHONE_OBS_MEDIA_DIR)
+  media_files <- if (dir.exists(media_dir)) {
+    list.files(media_dir, recursive = TRUE, full.names = TRUE)
+  } else {
+    character()
   }
 
   list(
-    procedure_dir = procedure_dir,
-    item_dirs = item_dirs,
-    excel_paths = excel_paths,
-    geopackage_paths = gpkg_paths
+    dest_dir = procedure_dir,
+    excel_path = excel_path,
+    geopackage_path = geopackage_path,
+    media_dir = if (length(media_files)) media_dir else NULL,
+    media_files = media_files,
+    media_unreferenced = as.integer(media_counts$unreferenced %||% 0L)
   )
 }
 
-.write_phone_obs_workbook <- function(long_data, path) {
-  wide_data <- .phone_obs_wide_format(long_data)
+.write_phone_obs_workbook <- function(long_data, path, item_order = NULL) {
+  wide_data <- .phone_obs_wide_format(long_data, item_order = item_order)
   guide <- .phone_obs_column_guide(wide_data, long_data)
   writexl::write_xlsx(
     list(
@@ -1115,6 +1221,50 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   )
 }
 
+# Decide the next page. A short page is NOT the end when the API still
+# returns X-Next-Observation-Id: media ZIPs are size-capped below `limit`
+# while more observations remain. An empty page, a repeated cursor, or an
+# offset that has reached X-Total-Count ends the loop.
+.phone_obs_next_page <- function(use_keyset,
+                                 next_observation_id,
+                                 n_rows,
+                                 limit,
+                                 offset,
+                                 total,
+                                 seen_cursors) {
+  nxt <- suppressWarnings(as.integer(next_observation_id))
+  has_cursor <- isTRUE(use_keyset) && length(nxt) == 1L && !is.na(nxt)
+  if (has_cursor) {
+    if (n_rows <= 0L || nxt %in% seen_cursors) {
+      return(list(done = TRUE))
+    }
+    return(list(
+      done = FALSE,
+      use_keyset = TRUE,
+      after_observation_id = nxt,
+      offset = offset,
+      seen_cursors = c(seen_cursors, nxt)
+    ))
+  }
+  if (n_rows <= 0L) {
+    return(list(done = TRUE))
+  }
+  offset <- offset + as.integer(n_rows)
+  if (!is.na(total) && offset >= total) {
+    return(list(done = TRUE))
+  }
+  if (is.na(total) && n_rows < limit) {
+    return(list(done = TRUE))
+  }
+  list(
+    done = FALSE,
+    use_keyset = FALSE,
+    after_observation_id = NULL,
+    offset = offset,
+    seen_cursors = seen_cursors
+  )
+}
+
 .fetch_phone_obs_csv <- function(hdr,
                                  project_id,
                                  procedure_id,
@@ -1129,6 +1279,7 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   first <- TRUE
   page_num <- 0L
   row_count <- 0L
+  seen_cursors <- integer()
 
   repeat {
     page_num <- page_num + 1L
@@ -1175,32 +1326,28 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       on_page(page = page_num, rows = row_count, data_type = data_type)
     }
 
-    if (use_keyset && !is.na(page$next_observation_id)) {
-      after_observation_id <- page$next_observation_id
-      if (nrow(batch) < limit) {
-        break
-      }
-      next
-    }
-
-    use_keyset <- FALSE
-    after_observation_id <- NULL
-    offset <- offset + nrow(batch)
-
-    if (!is.na(total)) {
-      if (offset >= total) {
-        break
-      }
-    } else if (nrow(batch) < limit) {
+    step <- .phone_obs_next_page(
+      use_keyset = use_keyset,
+      next_observation_id = page$next_observation_id,
+      n_rows = nrow(batch),
+      limit = limit,
+      offset = offset,
+      total = total,
+      seen_cursors = seen_cursors
+    )
+    if (isTRUE(step$done)) {
       break
     }
+    use_keyset <- step$use_keyset
+    after_observation_id <- step$after_observation_id
+    offset <- step$offset
+    seen_cursors <- step$seen_cursors
   }
 
   if (length(batches) == 0L) {
     return(tibble::tibble())
   }
-  .bind_phone_obs_pages(batches) %>%
-    .tidy_phone_observations()
+  .bind_phone_obs_pages(batches)
 }
 
 .download_phone_obs_media_page <- function(hdr,
@@ -1325,24 +1472,23 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   )
 }
 
+# Pages media rows and stages the extracted files under `staging_dir`
+# (owned by the caller). Returns raw (untidied) rows plus export metadata.
 .fetch_phone_obs_media <- function(hdr,
                                    project_id,
                                    procedure_id,
                                    data_type,
-                                   procedure_dir,
-                                   procedure,
+                                   staging_dir,
                                    on_page = NULL) {
   limit <- API_MAX_LIMIT
-  dir.create(procedure_dir, recursive = TRUE, showWarnings = FALSE)
-  staging_dir <- tempfile("phone-obs-media-")
   dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
-  on.exit(unlink(staging_dir, recursive = TRUE), add = TRUE)
 
   batches <- list()
   offset <- 0L
   after_observation_id <- NULL
   use_keyset <- TRUE
   total <- NA_integer_
+  seen_cursors <- integer()
   media_count <- 0L
   size_bytes <- 0L
   expires_at <- NULL
@@ -1407,52 +1553,34 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       on_page(page = page_index, rows = row_count, data_type = data_type)
     }
 
-    if (use_keyset && !is.na(page$next_observation_id)) {
-      after_observation_id <- page$next_observation_id
-      if (nrow(batch) < limit) {
-        break
-      }
-      next
-    }
-
-    use_keyset <- FALSE
-    after_observation_id <- NULL
-    offset <- offset + nrow(batch)
-    if (!is.na(total)) {
-      if (offset >= total) {
-        break
-      }
-    } else if (nrow(batch) < limit) {
+    step <- .phone_obs_next_page(
+      use_keyset = use_keyset,
+      next_observation_id = page$next_observation_id,
+      n_rows = nrow(batch),
+      limit = limit,
+      offset = offset,
+      total = total,
+      seen_cursors = seen_cursors
+    )
+    if (isTRUE(step$done)) {
       break
     }
+    use_keyset <- step$use_keyset
+    after_observation_id <- step$after_observation_id
+    offset <- step$offset
+    seen_cursors <- step$seen_cursors
   }
 
-  observations <- if (length(batches) == 0L) {
+  rows <- if (length(batches) == 0L) {
     tibble::tibble()
   } else {
-    .bind_phone_obs_pages(batches) %>%
-      .tidy_phone_observations()
+    .bind_phone_obs_pages(batches)
   }
-
-  exported <- .export_phone_obs_by_item(
-    observations = observations,
-    procedure_dir = procedure_dir,
-    staging_dir = if (nrow(observations) > 0L) staging_dir else NULL,
-    procedure = procedure,
-    data_type = data_type
-  )
-  files <- list.files(procedure_dir, recursive = TRUE, full.names = TRUE)
 
   list(
     data_type = data_type,
-    observations = observations,
-    dest_dir = procedure_dir,
-    zip_path = NULL,
-    files = files,
-    excel_path = exported$excel_paths,
-    geopackage_path = exported$geopackage_paths,
-    item_dirs = exported$item_dirs,
-    row_count = nrow(observations),
+    rows = rows,
+    row_count = nrow(rows),
     media_count = media_count,
     expires_at = expires_at,
     size_bytes = size_bytes,
@@ -1460,12 +1588,13 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
   )
 }
 
+# Fetch raw rows for one data type. Media files (if any) are staged under
+# `staging_dir`; nothing is written to the export folder here.
 .fetch_one_phone_obs_type <- function(hdr,
                                       project_id,
                                       procedure_id,
                                       data_type,
-                                      procedure_dir,
-                                      procedure,
+                                      staging_dir,
                                       on_page = NULL) {
   if (data_type %in% .PHONE_OBS_MEDIA_TYPES) {
     .fetch_phone_obs_media(
@@ -1473,33 +1602,22 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
       project_id = project_id,
       procedure_id = procedure_id,
       data_type = data_type,
-      procedure_dir = procedure_dir,
-      procedure = procedure,
+      staging_dir = staging_dir,
       on_page = on_page
     )
   } else {
-    observations <- .fetch_phone_obs_csv(
+    rows <- .fetch_phone_obs_csv(
       hdr = hdr,
       project_id = project_id,
       procedure_id = procedure_id,
       data_type = data_type,
       on_page = on_page
     )
-    exported <- .export_phone_obs_by_item(
-      observations = observations,
-      procedure_dir = procedure_dir,
-      staging_dir = NULL,
-      procedure = procedure,
-      data_type = data_type
-    )
     list(
       data_type = data_type,
-      observations = observations,
-      dest_dir = procedure_dir,
-      excel_path = exported$excel_paths,
-      geopackage_path = exported$geopackage_paths,
-      item_dirs = exported$item_dirs,
-      row_count = nrow(observations)
+      rows = rows,
+      row_count = nrow(rows),
+      media_count = 0L
     )
   }
 }
@@ -1519,23 +1637,30 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' stream a CSV; media types (\code{phone-photo}, \code{phone-video},
 #' \code{phone-audio}) return a JSON export descriptor per page, then this
 #' function calls \link{download_phone_observation_export}, follows the
-#' redirect to GCS, and extracts each ZIP. All requested types share one
-#' timestamped export tree under \code{dest_dir}:
+#' redirect to GCS, and extracts each ZIP. Every requested type is combined
+#' into a single workbook per procedure, written under \code{dest_dir}:
 #' \preformatted{
-#' {system_id}_{system_name}_{timestamp}/
+#' {system_id}_{system_name}/
 #'   {procedure_id}_{procedure_name}/
-#'     {item_name}/
-#'       observations.xlsx
-#'       observations.gpkg
-#'       {data_type}/          # media files only, when present
+#'     observations.xlsx     # all data types, long + wide + column guide
+#'     observations.gpkg
+#'     media/                # media files, only when present
 #' }
-#' Empty types (including media with no files) still create the matching
-#' item folder(s) and an empty \code{observations.xlsx}, using procedure item
-#' names when no rows are returned.
+#' The tree is stable (no timestamp), so looping over procedures of a system
+#' fills one system folder. Re-running a procedure overwrites its workbook
+#' and GeoPackage and adds any new media files. A procedure with no
+#' observations still gets its folder and an empty \code{observations.xlsx}.
+#'
+#' Media exports also return the non-media observations of the same
+#' features, so rows are de-duplicated by observation before the workbook is
+#' written.
 #'
 #' Large exports are paginated with \code{limit = 1000}. Pages are fetched
 #' with keyset cursors via \code{after_observation_id} when available,
-#' otherwise with \code{offset}, until an empty or short page is returned.
+#' otherwise with \code{offset}. A short page is followed when the response
+#' still carries \code{X-Next-Observation-Id} (media ZIPs are size-capped);
+#' paging stops on an empty page, a repeated cursor, or once \code{offset}
+#' reaches \code{X-Total-Count}.
 #'
 #' The workbook has three sheets: a column guide, one wide-format row per
 #' feature, and long-format observations linked by \code{feature_uuid}.
@@ -1563,7 +1688,11 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' \code{survey_observation} is reduced to the plain taxonomic label text
 #' (JSON / escaped payloads are parsed and discarded). The API
 #' \code{feature_uuid} is kept as the stable feature key. Media observations
-#' use the relative path \code{data_type/file_name} inside the item folder.
+#' use the relative path \code{media/file_name} inside the procedure folder.
+#' When one observation lists several files (\code{path/a.jpg | path/b.jpg}),
+#' each file becomes its own row so none is left unreferenced. A label that
+#' is only a scientific name copies class, order, family, genus, species and
+#' common name from another row with the same name.
 #'
 #' \code{data_type} may be omitted (download every type), one type, or several.
 #' Multiple types are fetched sequentially (the media ZIP build is server-side
@@ -1580,16 +1709,18 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #'   \code{phone-video}, \code{phone-audio}, \code{choice}, \code{text},
 #'   \code{numeric}, \code{label}. When \code{NULL} (default), every type is
 #'   downloaded.
-#' @param dest_dir Optional parent directory for the timestamped export folder.
-#'   When \code{NULL} (default), uses the current working directory. Each call
-#'   creates a new \code{{system_id}_{system_name}_{timestamp}/} tree that is
-#'   never overwritten.
+#' @param dest_dir Optional parent directory for the export tree. When
+#'   \code{NULL} (default), uses the current working directory. The procedure
+#'   folder is \code{dest_dir/{system_id}_{system_name}/{procedure_id}_{procedure_name}/}.
 #'
-#' @return A named list per requested \code{data_type} with
-#'   \code{observations}, \code{dest_dir} (procedure folder),
-#'   \code{excel_path}, \code{geopackage_path}, \code{item_dirs}, and related
-#'   export metadata. If a single type is requested, that list is returned
-#'   directly (not wrapped in an outer list).
+#' @return A named list with \code{observations} (one tidy tibble covering
+#'   every requested type), \code{dest_dir} (procedure folder),
+#'   \code{excel_path}, \code{geopackage_path} (\code{NULL} when there are no
+#'   coordinates), \code{media_dir} (\code{NULL} when no media),
+#'   \code{media_files}, \code{media_unreferenced} (files shipped in the
+#'   export ZIP without a matching observation row; kept in \code{media/}),
+#'   \code{row_count}, \code{media_count}, and \code{by_type} (per-type row /
+#'   media counts).
 #'
 #' @examples
 #' \dontrun{
@@ -1631,9 +1762,15 @@ get_phone_observations <- function(hdr,
     )
   }
 
-  export_root <- .phone_obs_export_root(dest_dir, procedure)
-  procedure_dir <- .phone_obs_procedure_dir(export_root, procedure)
+  system_dir <- .phone_obs_system_dir(dest_dir, procedure)
+  procedure_dir <- .phone_obs_procedure_dir(system_dir, procedure)
   dir.create(procedure_dir, recursive = TRUE, showWarnings = FALSE)
+
+  # Media files from every media type are staged here, then moved into
+  # procedure_dir/media/ once the combined observations are known.
+  staging_dir <- tempfile("phone-obs-media-")
+  dir.create(staging_dir, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(staging_dir, recursive = TRUE), add = TRUE)
 
   # One progress line per data type (like devtools::check()): show Downloading
   # immediately, update in place, then print a permanent aligned summary line.
@@ -1678,7 +1815,11 @@ get_phone_observations <- function(hdr,
         " | elapsed: ", elapsed
       )
     }
+    # On a live terminal, blank any leftover of the (longer) progress line.
     # cat keeps padding; cli_text collapses trailing spaces.
+    if (isTRUE(cli::is_dynamic_tty())) {
+      cat("\r", strrep(" ", max(nchar(line, type = "width"), 100L)), "\r", sep = "")
+    }
     cat(line, "\n", sep = "")
   }
 
@@ -1704,13 +1845,11 @@ get_phone_observations <- function(hdr,
     )
     # Force the Downloading line onto the console before any network work.
     cli::cli_progress_update(id = pb, force = TRUE)
-    try(cli::cli_flush(), silent = TRUE)
 
     on_page <- function(page, rows, data_type) {
       page_num <<- as.integer(page)
       row_count <<- as.integer(rows)
       cli::cli_progress_update(id = pb, force = TRUE)
-      try(cli::cli_flush(), silent = TRUE)
     }
     results[[i]] <- tryCatch(
       .fetch_one_phone_obs_type(
@@ -1718,8 +1857,7 @@ get_phone_observations <- function(hdr,
         project_id = ids$project_id,
         procedure_id = ids$procedure_id,
         data_type = current_type,
-        procedure_dir = procedure_dir,
-        procedure = procedure,
+        staging_dir = staging_dir,
         on_page = on_page
       ),
       error = function(e) {
@@ -1727,10 +1865,8 @@ get_phone_observations <- function(hdr,
         stop(e)
       }
     )
-    final_rows <- if (is.data.frame(results[[i]])) {
-      nrow(results[[i]])
-    } else if (is.list(results[[i]]) && is.data.frame(results[[i]]$observations)) {
-      nrow(results[[i]]$observations)
+    final_rows <- if (is.data.frame(results[[i]]$rows)) {
+      nrow(results[[i]]$rows)
     } else {
       0L
     }
@@ -1750,8 +1886,59 @@ get_phone_observations <- function(hdr,
     )
   }
 
-  if (length(results) == 1L) {
-    return(results[[1]])
+  # Combine every type, keep one row per observation, tidy once, and write a
+  # single workbook (+ gpkg + media/) for the procedure.
+  raw_rows <- lapply(results, function(r) r$rows)
+  combined <- .bind_phone_obs_pages(raw_rows) %>%
+    .dedupe_phone_obs_rows()
+  observations <- if (is.data.frame(combined) && nrow(combined) > 0L) {
+    .tidy_phone_observations(combined)
+  } else {
+    tibble::tibble()
   }
-  results
+
+  item_order <- if (is.data.frame(procedure$items) && "item_name" %in% names(procedure$items)) {
+    as.character(procedure$items$item_name)
+  } else {
+    NULL
+  }
+  exported <- .export_phone_obs_procedure(
+    observations = observations,
+    procedure_dir = procedure_dir,
+    staging_dir = staging_dir,
+    item_order = item_order
+  )
+
+  by_type <- tibble::tibble(
+    data_type = data_type,
+    rows = vapply(results, function(r) as.integer(r$row_count %||% 0L), integer(1)),
+    media_files = vapply(results, function(r) as.integer(r$media_count %||% 0L), integer(1))
+  )
+
+  cat(paste0(
+    cli::col_green(cli::symbol$tick), " ",
+    .pad("Exported", verb_width), " ",
+    .pad(basename(procedure_dir), type_width),
+    " | ", nrow(observations), " observation(s)",
+    " | ", length(exported$media_files), " media file(s)",
+    if (exported$media_unreferenced > 0L) {
+      paste0(" (", exported$media_unreferenced, " without a matching row)")
+    } else {
+      ""
+    },
+    " | ", exported$excel_path
+  ), "\n", sep = "")
+
+  list(
+    observations = observations,
+    dest_dir = procedure_dir,
+    excel_path = exported$excel_path,
+    geopackage_path = exported$geopackage_path,
+    media_dir = exported$media_dir,
+    media_files = exported$media_files,
+    media_unreferenced = exported$media_unreferenced,
+    row_count = nrow(observations),
+    media_count = length(exported$media_files),
+    by_type = by_type
+  )
 }
