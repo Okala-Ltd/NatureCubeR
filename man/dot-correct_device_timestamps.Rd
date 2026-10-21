@@ -2,12 +2,12 @@
 % Please edit documentation in R/media_timestamps.R
 \name{.correct_device_timestamps}
 \alias{.correct_device_timestamps}
-\title{Sequentially correct timestamps for a single device}
+\title{Sequentially correct timestamps for a single device group}
 \usage{
 .correct_device_timestamps(media_metadata)
 }
 \arguments{
-\item{media_metadata}{A data frame for a single device, sorted by
+\item{media_metadata}{A data frame for a single device group, sorted by
 \code{file_name}, containing at minimum the columns \code{timestamp}
 (POSIXct), \code{installation_timestamp} (POSIXct or Date), and
 \code{is_outlier} (logical).}
@@ -23,8 +23,9 @@ The input data frame with two additional columns:
 }
 \description{
 Internal helper called by \link{correct_timestamps}. Chains corrected
-timestamps row-by-row for one device (pre-sorted by \code{file_name}, with
-\code{is_outlier} already computed): good files keep their timestamp, a bad
+timestamps row-by-row for one device (or one \code{device_id} +
+\code{subfolder} deployment), pre-sorted by \code{file_name}, with
+\code{is_outlier} already computed: good files keep their timestamp, a bad
 first file is anchored to \code{installation_timestamp}, and each
 subsequent bad run is anchored to the last good time (+1 minute) then
 offset by the original inter-file gaps.

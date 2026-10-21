@@ -239,17 +239,18 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 }
 
 
-#' @title Sequentially correct timestamps for a single device
+#' @title Sequentially correct timestamps for a single device group
 #'
 #' @description
 #' Internal helper called by \link{correct_timestamps}. Chains corrected
-#' timestamps row-by-row for one device (pre-sorted by \code{file_name}, with
-#' \code{is_outlier} already computed): good files keep their timestamp, a bad
+#' timestamps row-by-row for one device (or one \code{device_id} +
+#' \code{subfolder} deployment), pre-sorted by \code{file_name}, with
+#' \code{is_outlier} already computed: good files keep their timestamp, a bad
 #' first file is anchored to \code{installation_timestamp}, and each
 #' subsequent bad run is anchored to the last good time (+1 minute) then
 #' offset by the original inter-file gaps.
 #'
-#' @param media_metadata A data frame for a single device, sorted by
+#' @param media_metadata A data frame for a single device group, sorted by
 #'   \code{file_name}, containing at minimum the columns \code{timestamp}
 #'   (POSIXct), \code{installation_timestamp} (POSIXct or Date), and
 #'   \code{is_outlier} (logical).
@@ -324,29 +325,44 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 #' \code{installation_timestamp} or more than 48 hours after
 #' \code{removal_timestamp}.
 #'
+#' When a device has several deployments, put each deployment's files in a
+#' subfolder under \code{device_id} and pass that folder name in the optional
+#' \code{subfolder} column. Correction then runs separately for each
+#' \code{device_id} + \code{subfolder} group, so the same \code{file_name}
+#' may appear more than once for a device as long as the deployments differ.
+#' Omit \code{subfolder} for the previous behaviour (one sequence per device).
+#'
 #' @param media_metadata A data frame or tibble containing, at minimum, the
 #'   following columns:
 #'   \itemize{
 #'     \item \strong{file_name}: Character. File name of each media file,
-#'           used to sort files in chronological order within each device.
-#'           Must be unique within each \code{device_id}; the function stops
-#'           with an error if any duplicates are found.
+#'           used to sort files in chronological order within each device
+#'           group. Must be unique within each \code{device_id} (or within
+#'           each \code{device_id} + \code{subfolder} when that column is
+#'           present); the function stops with an error if any duplicates
+#'           are found.
 #'     \item \strong{device_id}: Character. Unique camera identifier for each
 #'           file.
+#'     \item \strong{subfolder}: Character (optional). Deployment folder
+#'           under \code{device_id}. When present, uniqueness checks and
+#'           sequential correction are scoped to
+#'           \code{device_id} + \code{subfolder}. Use \code{NA} or
+#'           \code{""} for files that sit directly under the device folder.
 #'     \item \strong{timestamp}: POSIXct, or character/Date coercible via
 #'           \link[lubridate]{as_datetime}. Timestamp read from the file's
 #'           EXIF metadata.
 #'     \item \strong{installation_timestamp}: POSIXct, or character/Date
 #'           coercible via \link[lubridate]{as_datetime}, giving the
 #'           date/time the camera was deployed in the field (typically one
-#'           repeated value per device).
+#'           repeated value per device group).
 #'     \item \strong{removal_timestamp}: POSIXct, or character/Date coercible
 #'           via \link[lubridate]{as_datetime}, giving the date/time the
 #'           camera was removed from the field.
 #'   }
 #'
 #' @return A tibble with the input columns (\code{file_name}, \code{device_id},
-#'   \code{timestamp}, \code{installation_timestamp}, \code{removal_timestamp})
+#'   optional \code{subfolder}, \code{timestamp},
+#'   \code{installation_timestamp}, \code{removal_timestamp})
 #'   and three additional columns produced by the function:
 #'   \itemize{
 #'     \item \strong{is_outlier}: Logical. \code{TRUE} for files whose
@@ -376,10 +392,15 @@ push_new_timestamps <- function(hdr, media_metadata, chunksize) {
 #'
 #'   corrected <- correct_timestamps(cam_data)
 #'
+#'   # Several deployments of the same device, each in its own subfolder:
+#'   # cam_A/2024-01/IMG_001.JPG and cam_A/2024-06/IMG_001.JPG
+#'   cam_data$subfolder <- dirname(cam_data$relative_path)
+#'   corrected <- correct_timestamps(cam_data)
+#'
 #'   # Inspect corrections
 #'   corrected %>%
 #'     filter(is_outlier) %>%
-#'     select(device_id, file_name, new_timestamp, correction_type)
+#'     select(device_id, subfolder, file_name, new_timestamp, correction_type)
 #'
 #'   # Prepare for platform upload
 #'   to_upload <- corrected %>%
@@ -405,6 +426,12 @@ correct_timestamps <- function(media_metadata) {
     stop("Data frame is missing required column(s): ", paste(missing_cols, collapse = ", "))
   }
 
+  has_subfolder <- "subfolder" %in% names(media_metadata)
+  if (has_subfolder) {
+    media_metadata$subfolder <- as.character(media_metadata$subfolder)
+    media_metadata$subfolder[is.na(media_metadata$subfolder)] <- ""
+  }
+
   media_metadata <- media_metadata %>%
     dplyr::mutate(
       timestamp = lubridate::as_datetime(.data$timestamp),
@@ -413,8 +440,14 @@ correct_timestamps <- function(media_metadata) {
     )
 
   # --- Check for missing values (also catches timestamps that failed to
-  # parse above, since as_datetime() turns those into NA) ---
-  cols_with_na <- names(media_metadata)[sapply(media_metadata, anyNA)]
+  # parse above, since as_datetime() turns those into NA). Empty subfolder
+  # is allowed and means the file sits directly under device_id. ---
+  cols_to_check <- setdiff(names(media_metadata), if (has_subfolder) "subfolder" else character())
+  cols_with_na <- cols_to_check[vapply(
+    media_metadata[cols_to_check],
+    anyNA,
+    logical(1)
+  )]
   if (length(cols_with_na) > 0) {
     stop(
       "The following column(s) contain missing values, please check the data: ",
@@ -422,15 +455,35 @@ correct_timestamps <- function(media_metadata) {
     )
   }
 
-  # --- file_name must be unique within each device_id ---
-  dup_idx <- duplicated(media_metadata[c("device_id", "file_name")])
+  # --- file_name must be unique within each device group ---
+  id_cols <- if (has_subfolder) {
+    c("device_id", "subfolder", "file_name")
+  } else {
+    c("device_id", "file_name")
+  }
+  dup_idx <- duplicated(media_metadata[id_cols])
   if (any(dup_idx)) {
-    stop(
-      "file_name must be unique within each device_id. Duplicate(s) found: ",
-      paste(
-        unique(paste0(media_metadata$device_id[dup_idx], "/", media_metadata$file_name[dup_idx])),
-        collapse = ", "
+    dup_paths <- if (has_subfolder) {
+      gsub(
+        "/+",
+        "/",
+        paste(
+          media_metadata$device_id[dup_idx],
+          media_metadata$subfolder[dup_idx],
+          media_metadata$file_name[dup_idx],
+          sep = "/"
+        )
       )
+    } else {
+      paste0(media_metadata$device_id[dup_idx], "/", media_metadata$file_name[dup_idx])
+    }
+    stop(
+      if (has_subfolder) {
+        "file_name must be unique within each device_id/subfolder. Duplicate(s) found: "
+      } else {
+        "file_name must be unique within each device_id. Duplicate(s) found: "
+      },
+      paste(unique(dup_paths), collapse = ", ")
     )
   }
 
@@ -438,10 +491,18 @@ correct_timestamps <- function(media_metadata) {
   media_metadata$is_outlier <- (media_metadata$timestamp + lubridate::hours(48) < media_metadata$installation_timestamp) |
                                (media_metadata$timestamp - lubridate::hours(48) > media_metadata$removal_timestamp)
 
-  # --- Sequential correction: sort by device/file, then chain per device ---
-  media_metadata %>%
-    dplyr::arrange(.data$device_id, .data$file_name) %>%
-    dplyr::group_by(.data$device_id) %>%
-    dplyr::group_modify(~ .correct_device_timestamps(.x)) %>%
-    dplyr::ungroup()
+  # --- Sequential correction: sort, then chain per device (or deployment) ---
+  if (has_subfolder) {
+    media_metadata %>%
+      dplyr::arrange(.data$device_id, .data$subfolder, .data$file_name) %>%
+      dplyr::group_by(.data$device_id, .data$subfolder) %>%
+      dplyr::group_modify(~ .correct_device_timestamps(.x)) %>%
+      dplyr::ungroup()
+  } else {
+    media_metadata %>%
+      dplyr::arrange(.data$device_id, .data$file_name) %>%
+      dplyr::group_by(.data$device_id) %>%
+      dplyr::group_modify(~ .correct_device_timestamps(.x)) %>%
+      dplyr::ungroup()
+  }
 }

@@ -11,18 +11,25 @@ correct_timestamps(media_metadata)
 following columns:
 \itemize{
   \item \strong{file_name}: Character. File name of each media file,
-        used to sort files in chronological order within each device.
-        Must be unique within each \code{device_id}; the function stops
-        with an error if any duplicates are found.
+        used to sort files in chronological order within each device
+        group. Must be unique within each \code{device_id} (or within
+        each \code{device_id} + \code{subfolder} when that column is
+        present); the function stops with an error if any duplicates
+        are found.
   \item \strong{device_id}: Character. Unique camera identifier for each
         file.
+  \item \strong{subfolder}: Character (optional). Deployment folder
+        under \code{device_id}. When present, uniqueness checks and
+        sequential correction are scoped to
+        \code{device_id} + \code{subfolder}. Use \code{NA} or
+        \code{""} for files that sit directly under the device folder.
   \item \strong{timestamp}: POSIXct, or character/Date coercible via
         \link[lubridate]{as_datetime}. Timestamp read from the file's
         EXIF metadata.
   \item \strong{installation_timestamp}: POSIXct, or character/Date
         coercible via \link[lubridate]{as_datetime}, giving the
         date/time the camera was deployed in the field (typically one
-        repeated value per device).
+        repeated value per device group).
   \item \strong{removal_timestamp}: POSIXct, or character/Date coercible
         via \link[lubridate]{as_datetime}, giving the date/time the
         camera was removed from the field.
@@ -30,7 +37,8 @@ following columns:
 }
 \value{
 A tibble with the input columns (\code{file_name}, \code{device_id},
-  \code{timestamp}, \code{installation_timestamp}, \code{removal_timestamp})
+  optional \code{subfolder}, \code{timestamp},
+  \code{installation_timestamp}, \code{removal_timestamp})
   and three additional columns produced by the function:
   \itemize{
     \item \strong{is_outlier}: Logical. \code{TRUE} for files whose
@@ -62,6 +70,13 @@ Outlier detection uses a 48-hour buffer on both deployment bounds: a file
 is flagged if its \code{timestamp} falls more than 48 hours before
 \code{installation_timestamp} or more than 48 hours after
 \code{removal_timestamp}.
+
+When a device has several deployments, put each deployment's files in a
+subfolder under \code{device_id} and pass that folder name in the optional
+\code{subfolder} column. Correction then runs separately for each
+\code{device_id} + \code{subfolder} group, so the same \code{file_name}
+may appear more than once for a device as long as the deployments differ.
+Omit \code{subfolder} for the previous behaviour (one sequence per device).
 }
 \examples{
 \dontrun{
@@ -73,10 +88,15 @@ is flagged if its \code{timestamp} falls more than 48 hours before
 
   corrected <- correct_timestamps(cam_data)
 
+  # Several deployments of the same device, each in its own subfolder:
+  # cam_A/2024-01/IMG_001.JPG and cam_A/2024-06/IMG_001.JPG
+  cam_data$subfolder <- dirname(cam_data$relative_path)
+  corrected <- correct_timestamps(cam_data)
+
   # Inspect corrections
   corrected \%>\%
     filter(is_outlier) \%>\%
-    select(device_id, file_name, new_timestamp, correction_type)
+    select(device_id, subfolder, file_name, new_timestamp, correction_type)
 
   # Prepare for platform upload
   to_upload <- corrected \%>\%
