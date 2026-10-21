@@ -189,7 +189,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
 
 # Internally used function to send updated labels in chunks
 
-send_updated_labels <- function(hdr, datachunk) {
+.send_updated_labels <- function(hdr, datachunk) {
 
   urlreq_ap <- httr2::req_url_path_append(hdr$root, "updateSegmentLabels", hdr$key)
   urlreq_ap <- urlreq_ap %>%
@@ -312,7 +312,7 @@ push_new_labels <- function(hdr, submission_records, chunksize) {
   submitted <- 0
   resp <- NULL
   for (i in seq_along(spl.dt)) {
-    resp <- send_updated_labels(hdr, datachunk = spl.dt[[i]])
+    resp <- .send_updated_labels(hdr, datachunk = spl.dt[[i]])
     submitted <- submitted + nrow(spl.dt[[i]])
     cli::cli_progress_update(id = pb, set = submitted)
   }
