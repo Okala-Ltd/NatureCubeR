@@ -78,6 +78,7 @@ get_station_info <- function(hdr,
 #'
 #' @author
 #' Adam Varley
+#' @export
 plot_stations <- function(geojson_response) {
     message('Plotting stations')
     leaflet::leaflet(data = geojson_response) %>%

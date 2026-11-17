@@ -5,7 +5,16 @@
 #    column headers)
 # 2) Fetch project schema once
 # 3) Validate against the procedure (checks labels against the database)
-# 4) Upload the validated result
+# 4) Preview the upload with dry_run = TRUE (nothing is sent)
+# 5) Upload the validated result
+#
+# Required CSV columns: longitude, latitude, timestamp, plus one column per
+# procedure item, named like the item (see tutorials/data/example_observation_data.csv).
+# Label items can be given either in a column named like the label item (as in
+# the example CSV) or in taxonomic rank columns: species, genus, family,
+# order, class, phylum, kingdom (the most specific non-blank rank is used).
+# Media items (phone-photo / phone-video / phone-audio) take the local file
+# path; the file is uploaded through a signed URL during step 5.
 
 if (!requireNamespace("devtools", quietly = TRUE)) {
   stop("Package 'devtools' is required for local testing. Install with install.packages('devtools').")
@@ -65,11 +74,25 @@ validated <- validate_csv_against_procedure(
   hdr              = hdr
 )
 
+table(validated$status)
+validated[validated$status == "rejected", c("status", "message")]
+
 # ----------------------------------------------------------------------------
-# 4. Upload the validated result
+# 4. Preview the upload (dry run)
 # ----------------------------------------------------------------------------
 
-# This will:
+# dry_run = TRUE builds the payload and returns it WITHOUT uploading anything
+# (media files are not uploaded either). result shows the rows that would be
+# sent, with api_status "pending".
+preview <- upload_observations_from_csv(hdr = hdr, validated = validated, dry_run = TRUE)
+preview$resolved_rows
+preview$result
+
+# ----------------------------------------------------------------------------
+# 5. Upload the validated result
+# ----------------------------------------------------------------------------
+
+# This WRITES to the platform. It will:
 # - reuse the observations/labels already built and checked in step 3
 #   (nothing is rebuilt and no label is checked against the database again)
 # - upload only the rows that passed validation
@@ -81,7 +104,11 @@ upload_result <- upload_observations_from_csv(
   validated = validated
 )
 
+# One row per uploaded observation with api_status / api_message columns.
+# The API checks each observation on its own, so one rejection does not stop
+# the others from being saved.
 upload_result$result
-
+upload_result$n_success
+upload_result$n_failed
 
 

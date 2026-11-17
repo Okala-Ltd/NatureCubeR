@@ -64,7 +64,7 @@ does, since that's the only step here that needs a NatureCube connection.
   schema    <- get_project_systems(hdr)
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
-  df <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
+  df <- readr::read_csv("tutorials/data/example_observation_data.csv")
   built <- build_upload_observations_from_table(
     data      = df,
     procedure = procedure

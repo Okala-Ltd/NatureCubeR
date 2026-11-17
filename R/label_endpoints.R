@@ -201,11 +201,39 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
   return(jsonlite::fromJSON(resp))
 }
 
+# Map plain column names from get_media_assets() / get_project_labels() onto
+# the updateSegmentLabels schema names the API expects.
+.normalize_label_submission_columns <- function(submission_records) {
+  if (!is.data.frame(submission_records)) {
+    return(submission_records)
+  }
+
+  rename_map <- c(
+    segment_record_id = "segment_record_id_fk",
+    label_id = "label_id_fk"
+  )
+  for (from in names(rename_map)) {
+    to <- rename_map[[from]]
+    if (!(from %in% names(submission_records))) {
+      next
+    }
+    if (to %in% names(submission_records)) {
+      # Keep the schema column; drop the alias so both are not sent.
+      submission_records[[from]] <- NULL
+    } else {
+      names(submission_records)[names(submission_records) == from] <- to
+    }
+  }
+  submission_records
+}
+
 # Validate the subset of the API's Label schema used for new labels.
 .validate_label_submission <- function(submission_records) {
   if (!is.data.frame(submission_records)) {
     stop("`submission_records` must be a data frame or tibble.")
   }
+
+  submission_records <- .normalize_label_submission_columns(submission_records)
 
   required <- c("segment_record_id_fk", "label_id_fk")
   optional <- c(
@@ -224,7 +252,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
       paste(problems, collapse = "; "),
       "). Expected columns are: ",
       paste(c(required, optional), collapse = ", "),
-      "."
+      ". Columns `segment_record_id` and `label_id` are also accepted and renamed automatically."
     )
   }
 
@@ -245,7 +273,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
         "Column `", column, "` must contain non-missing whole numbers, as required by the updateSegmentLabels schema."
       )
     }
-  } 
+  }
   invisible(submission_records)
 }
 
@@ -256,16 +284,20 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
 #' array of label objects.
 #'
 #' Each row in \code{submission_records} must contain
-#' \code{segment_record_id_fk} and \code{label_id_fk}. The optional columns
-#' supported by the endpoint are \code{number_of_individuals},
-#' \code{label_record_uuid}, \code{prediction_accuracy},
-#' \code{label_created_at}, and \code{label_record_id}. Extra columns are
-#' rejected before any request is made.
+#' \code{segment_record_id_fk} and \code{label_id_fk}. The plain names
+#' \code{segment_record_id} and \code{label_id} (as returned by
+#' \link{get_media_assets} and \link{get_project_labels}) are accepted and
+#' renamed automatically. The optional columns supported by the endpoint are
+#' \code{number_of_individuals}, \code{label_record_uuid},
+#' \code{prediction_accuracy}, \code{label_created_at}, and
+#' \code{label_record_id}. Extra columns are rejected before any request is
+#' made.
 #'
 #' @param hdr A base URL provided and valid API key returned by the function \link{auth_headers}
 #' @param submission_records A data frame or tibble with one row per label.
 #'   Required columns are \code{segment_record_id_fk} (integer) and
-#'   \code{label_id_fk} (integer). Optional columns are
+#'   \code{label_id_fk} (integer), or the aliases \code{segment_record_id}
+#'   and \code{label_id}. Optional columns are
 #'   \code{number_of_individuals} (integer, default 1),
 #'   \code{label_record_uuid} (character), \code{prediction_accuracy}
 #'   (numeric), \code{label_created_at} (date-time), and
@@ -286,7 +318,7 @@ add_IUCN_labels <- function(hdr, labels, chunksize) {
 #' @export
 push_new_labels <- function(hdr, submission_records, chunksize) {
 
-  .validate_label_submission(submission_records)
+  submission_records <- .validate_label_submission(submission_records)
 
   if (chunksize > nrow(submission_records)) {
     message('chunksize is bigger than length of data altering chunksize to ', nrow(submission_records))
@@ -303,6 +335,7 @@ push_new_labels <- function(hdr, submission_records, chunksize) {
     total  = nrow(submission_records),
     clear  = FALSE
   )
+  
   # on.exit (not tryCatch) so the bar is always closed - including on a user
   # interrupt (e.g. Escape/Ctrl+C) - see .check_label_values() in
   # push_phone_observations.R for the same pattern and why tryCatch's `error`

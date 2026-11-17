@@ -47,21 +47,31 @@ cat("Base URL:", hdr$root$url, "\n")
 # -----------------------------------------------------------------------------
 # Step 3: Verify the connection
 # -----------------------------------------------------------------------------
-# get_project() is a lightweight call that returns basic project metadata.
-# A successful response confirms your key and URL are correct.
+# get_project() is a lightweight call. It prints the name of the project your
+# key belongs to ("Setting your active project as - <name>") and returns
+# nothing, so there is no object to assign. A printed project name confirms
+# that your key and URL are correct. An HTTP 401 means the key is wrong or has
+# expired: generate a new one on the dashboard.
 
-project <- get_project(hdr = hdr)
-print(project)
+get_project(hdr = hdr)
 
 # -----------------------------------------------------------------------------
 # Step 4 (optional): Connect to the development / SIT environment
 # -----------------------------------------------------------------------------
 # Use auth_headers_dev() when testing against the staging environment.
-# It reads NATURECUBE_SIT_URL, defaulting to https://sit.api.naturecube.io/api/
+# It reads NATURECUBE_SIT_URL, defaulting to https://sit.naturecube.io/api/
+# Keys are issued per environment, so a production key will not work here.
 #
 # Add to ~/.Renviron if you need a non-default SIT URL:
 #   NATURECUBE_SIT_URL=https://your-sit-url/api/
 
 # hdr_dev <- auth_headers_dev(api_key)
-# project_dev <- get_project(hdr = hdr_dev)
-# print(project_dev)
+# get_project(hdr = hdr_dev)
+
+# -----------------------------------------------------------------------------
+# Next steps
+# -----------------------------------------------------------------------------
+#   tutorials/project_data_tutorial.R           stations, media assets, labels
+#   tutorials/download_phone_observations_tutorial.R   export observations + media
+#   tutorials/upload_observations_from_csv.R    upload observations from a CSV
+#   tutorials/test_timestamp.R                  fix media timestamps

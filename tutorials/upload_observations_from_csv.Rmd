@@ -31,13 +31,19 @@ Minimum required columns:
 - One column per procedure item, named to match that item's name in the
   schema (e.g. a `DBH` item needs a `DBH` column)
 
-If the procedure has a `label` data_type item, add taxonomic rank columns -
-`species`, `genus`, `family`, `order`, `class`, `phylum`, `kingdom` - looked
-up by those fixed names, not by the item's own name. Not every organism is
+If the procedure has a `label` data_type item, give the label either in a
+column named like the label item (as in
+`tutorials/data/example_observation_data.csv`, where the column is
+`Taxonomic label`) or in taxonomic rank columns - `species`, `genus`,
+`family`, `order`, `class`, `phylum`, `kingdom`. Not every organism is
 identified all the way to species: the most specific non-blank rank is used
 (e.g. one only identified to genus is still uploaded, using that genus).
 Each unique resulting value is checked once against the wider IUCN species
 database.
+
+Media items (`phone-photo`, `phone-video`, `phone-audio`) take the local file
+path. The file must exist, and is uploaded through a signed URL during the
+upload step.
 
 Every observation is validated as a whole: a bad timestamp, non-decimal
 lon/lat, missing media file, unmatched label, or wrong-typed value rejects
@@ -89,7 +95,7 @@ checked against the label database - which can take a while on a large
 CSV, so you only want to do it once.
 
 ```{r validate, eval=FALSE}
-csv_path <- "tutorials/data/example_observation_data_wide.csv"
+csv_path <- "tutorials/data/example_observation_data.csv"
 
 # validate_csv_against_procedure() takes a data frame, not a path, so read
 # it yourself first - free to filter/mutate it before validating.
@@ -107,13 +113,27 @@ validated[validated$status == "rejected", c("status", "message")]
 
 ---
 
-## Step 4 — Upload the validated result
+## Step 4 — Preview the upload (dry run)
+
+With `dry_run = TRUE` the payload is built and returned **without uploading
+anything** (media files are not uploaded either). `result` lists the rows that
+would be sent, with `api_status` set to `"pending"`.
+
+```{r dry-run, eval=FALSE}
+preview <- upload_observations_from_csv(hdr = hdr, validated = validated, dry_run = TRUE)
+preview$resolved_rows
+preview$result
+```
+
+---
+
+## Step 5 — Upload the validated result
 
 Pass `validated` straight into `upload_observations_from_csv()` - it reuses
 everything already built and checked, so nothing is rebuilt and no label is
 checked against the database a second time. This is the only way to
 upload: there's no direct `csv_path`/`procedure` shortcut, since validating
-first is mandatory.
+first is mandatory. **This step writes to the platform.**
 
 ```{r upload, eval=FALSE}
 result <- upload_observations_from_csv(
@@ -121,8 +141,14 @@ result <- upload_observations_from_csv(
   validated = validated
 )
 
+# One row per uploaded observation, with api_status / api_message columns.
 result$result
+result$n_success
+result$n_failed
 ```
+
+The API checks each observation on its own, so one rejection does not stop the
+others from being saved.
 
 ---
 
