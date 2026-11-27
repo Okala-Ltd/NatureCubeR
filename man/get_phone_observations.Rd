@@ -7,9 +7,8 @@
 get_phone_observations(hdr, procedure, data_type = NULL, dest_dir = NULL)
 }
 \arguments{
-\item{hdr}{Auth headers from \link{auth_headers} or \link{auth_headers_dev}.
-SIT must be used until this endpoint is on production
-(\link{auth_headers_dev}).}
+\item{hdr}{Auth headers from \link{auth_headers} (production) or
+\link{auth_headers_dev} (SIT).}
 
 \item{procedure}{Named list returned by \link{get_procedure}. Must include
 \code{project_id}, \code{procedure_id}, \code{system_id},
@@ -111,7 +110,7 @@ when you want a single workflow; pass one type at a time to inspect timing.
 }
 \examples{
 \dontrun{
-  hdr <- auth_headers_dev("your_api_key")
+  hdr <- auth_headers("your_api_key")
   schema <- get_project_systems(hdr)
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo",

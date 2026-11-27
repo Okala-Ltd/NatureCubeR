@@ -21,11 +21,29 @@ After installation, load the package and start using its functions:
 
 ```r
 library(NatureCubeR)
-# Example usage
-# result <- okala_function(args)
+
+# Set NATURECUBE_API_KEY in ~/.Renviron first, then:
+hdr <- auth_headers(get_key())
+get_project(hdr)          # prints the active project name
+
+# Sensors in the project, as an sf object, and a map of them
+stations <- get_station_info(hdr, datatype = "image")
+plot_stations(stations)
 ```
 
 For more detailed examples, see the [`tutorials/`](tutorials/) folder, which contains scripts demonstrating typical workflows.
+
+### Tutorials
+
+Each tutorial is available as a runnable `.R` script and as an `.Rmd` document.
+
+| Tutorial | Covers |
+|---|---|
+| [`auth_tutorial`](tutorials/auth_tutorial.R) | API keys, production and SIT headers |
+| [`project_data_tutorial`](tutorials/project_data_tutorial.R) | stations, media assets, species labels, blank/publish status |
+| [`download_phone_observations_tutorial`](tutorials/download_phone_observations_tutorial.R) | export phone observations and media to Excel, GeoPackage and a media folder |
+| [`upload_observations_from_csv`](tutorials/upload_observations_from_csv.R) | validate and upload observations from a CSV |
+| [`test_timestamp`](tutorials/test_timestamp.R) | correct media timestamps in bulk |
 
 ## Observation Upload From CSV
 
@@ -53,7 +71,7 @@ hdr <- auth_headers(get_key())
 schema <- get_project_systems(hdr)
 procedure <- get_procedure(schema, system_name = "Plante Ivindo", procedure_name = "Arbre")
 
-observation_data <- readr::read_csv("tutorials/data/example_observation_data_wide.csv")
+observation_data <- readr::read_csv("tutorials/data/example_observation_data.csv")
 
 validated <- validate_csv_against_procedure(
     procedure = procedure,
@@ -68,15 +86,22 @@ result$result
 
 ## Phone Observations With Media
 
-`upload_phone_observations()` supports attaching photos, videos, and audio from
-a local `media_dir`. Media is uploaded the same way as the mobile app:
+**Upload.** `upload_observations_from_csv()` attaches photos, videos and audio
+referenced in the CSV. Put the local file path in the column of a
+`phone-photo`, `phone-video` or `phone-audio` item. `validate_csv_against_procedure()`
+rejects rows whose file does not exist, and the upload then works like the
+mobile app:
 
-1. Request signed PUT URLs (`getFieldMediaUploadUrls`)
+1. Request signed PUT URLs
 2. Upload each file directly to cloud storage
-3. Submit observation metadata only (`pushPhoneObservations`)
+3. Submit the observation with the stored file reference
 
-Pass filenames in observation `data` that match files in `media_dir`. Callers
-do not need to manage signed URLs themselves.
+You do not need to manage signed URLs yourself.
+
+**Download.** `get_phone_observations(hdr, procedure, dest_dir = ...)` exports
+a procedure's observations to `observations.xlsx` and `observations.gpkg`, with
+its media in a `media/` folder. See
+[`tutorials/download_phone_observations_tutorial.R`](tutorials/download_phone_observations_tutorial.R).
 
 ## Contributing
 

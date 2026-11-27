@@ -80,7 +80,7 @@ status-gated pattern.
   procedure <- get_procedure(schema,
     system_name = "Plante Ivindo", procedure_name = "Arbre")
 
-  observation_data <- readr::read_csv("tutorials/example_wide.csv")
+  observation_data <- readr::read_csv("tutorials/data/example_observation_data.csv")
   validated <- validate_csv_against_procedure(procedure,
     observation_data = observation_data, hdr = hdr)
 }

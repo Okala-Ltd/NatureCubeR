@@ -78,6 +78,7 @@ get_station_info <- function(hdr,
 #'
 #' @author
 #' Adam Varley
+#' @export
 plot_stations <- function(geojson_response) {
     message('Plotting stations')
     leaflet::leaflet(data = geojson_response) %>%
@@ -273,6 +274,9 @@ plot_stations <- function(geojson_response) {
 }
 
 #' Fetch media assets in parallel using a PSOCK cluster (safe with httr2).
+#'
+#' Jobs are dispatched dynamically so the progress bar advances when each
+#' station finishes, instead of waiting for a whole wave of \code{workers}.
 #' @noRd
 .fetch_media_assets_cluster <- function(psrID, hdr, datatype, limit, workers, pb) {
   n <- length(psrID)
@@ -290,23 +294,36 @@ plot_stations <- function(geojson_response) {
     envir = environment()
   )
 
-  i <- 1L
-  while (i <= n) {
-    wave_end <- min(i + workers - 1L, n)
-    wave_idx <- i:wave_end
-    wave_results <- parallel::parLapply(cl, wave_idx, function(j) {
-      hdr_local <- list(key = api_key, root = httr2::request(api_root))
-      utils::getFromNamespace(".fetch_media_assets_for_psr", "NatureCubeR")(
-        hdr = hdr_local,
-        datatype = datatype,
-        psr_id = as.integer(psrID[[j]]),
-        limit = limit
-      )
-    })
-    results[wave_idx] <- wave_results
-    cli::cli_progress_update(id = pb, inc = length(wave_idx))
-    i <- wave_end + 1L
+  worker_fun <- function(j) {
+    hdr_local <- list(key = api_key, root = httr2::request(api_root))
+    utils::getFromNamespace(".fetch_media_assets_for_psr", "NatureCubeR")(
+      hdr = hdr_local,
+      datatype = datatype,
+      psr_id = as.integer(psrID[[j]]),
+      limit = limit
+    )
   }
+
+  # Dynamic pool: keep every worker busy and bump the bar as each station
+  # returns. Uses the same sendCall/recvOneResult pattern as
+  # parallel::clusterApplyLB, so progress is not stuck waiting for a full wave.
+  p <- length(cl)
+  submit <- function(node, job) {
+    parallel:::sendCall(cl[[node]], worker_fun, list(job), tag = job)
+  }
+  for (node in seq_len(min(n, p))) {
+    submit(node, node)
+  }
+  for (done in seq_len(n)) {
+    d <- parallel:::recvOneResult(cl)
+    results[d$tag] <- list(d$value)
+    cli::cli_progress_update(id = pb, inc = 1L)
+    next_job <- done + min(n, p)
+    if (next_job <= n) {
+      submit(d$node, next_job)
+    }
+  }
+  parallel:::checkForRemoteErrors(results)
 
   results
 }

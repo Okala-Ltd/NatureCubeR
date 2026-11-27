@@ -83,12 +83,14 @@ hdr <- auth_headers(api_key, NATURECUBE_URL = "https://naturecube.io/api/")
 
 ## Step 3 — Verify the connection
 
-`get_project()` is a lightweight call that returns basic project metadata.
-A successful response confirms that your key and URL are correct.
+`get_project()` is a lightweight call. It prints the name of the project your
+key belongs to (`Setting your active project as - <name>`) and returns
+nothing, so there is no object to assign. A printed project name confirms that
+your key and URL are correct. An HTTP 401 means the key is wrong or has
+expired: generate a new one on the dashboard.
 
 ```{r verify, eval=FALSE}
-project <- get_project(hdr = hdr)
-print(project)
+get_project(hdr = hdr)
 ```
 
 ---
@@ -97,7 +99,8 @@ print(project)
 
 Use `auth_headers_dev()` when working against the staging environment. It
 reads `NATURECUBE_SIT_URL`, defaulting to
-`https://sit.api.naturecube.io/api/`.
+`https://sit.naturecube.io/api/`. Keys are issued per environment, so a
+production key will not work here.
 
 Add to `~/.Renviron` if you need a non-default SIT URL:
 
@@ -107,10 +110,18 @@ NATURECUBE_SIT_URL=https://your-sit-url/api/
 
 ```{r auth-dev, eval=FALSE}
 hdr_dev <- auth_headers_dev(api_key)
-project_dev <- get_project(hdr = hdr_dev)
+get_project(hdr = hdr_dev)
 ```
 
 ---
+
+## Next steps
+
+- `tutorials/project_data_tutorial.Rmd` — stations, media assets and labels
+- `tutorials/download_phone_observations_tutorial.Rmd` — export observations
+  and media to Excel, GeoPackage and a media folder
+- `tutorials/upload_observations_from_csv.Rmd` — upload observations from a CSV
+- `tutorials/test_timestamp.Rmd` — fix media timestamps
 
 ## Full tutorial script
 

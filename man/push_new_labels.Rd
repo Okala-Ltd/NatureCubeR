@@ -11,7 +11,8 @@ push_new_labels(hdr, submission_records, chunksize)
 
 \item{submission_records}{A data frame or tibble with one row per label.
 Required columns are \code{segment_record_id_fk} (integer) and
-\code{label_id_fk} (integer). Optional columns are
+\code{label_id_fk} (integer), or the aliases \code{segment_record_id}
+and \code{label_id}. Optional columns are
 \code{number_of_individuals} (integer, default 1),
 \code{label_record_uuid} (character), \code{prediction_accuracy}
 (numeric), \code{label_created_at} (date-time), and
@@ -29,11 +30,14 @@ Push new labels to the platform in chunks. The endpoint expects a JSON
 array of label objects.
 
 Each row in \code{submission_records} must contain
-\code{segment_record_id_fk} and \code{label_id_fk}. The optional columns
-supported by the endpoint are \code{number_of_individuals},
-\code{label_record_uuid}, \code{prediction_accuracy},
-\code{label_created_at}, and \code{label_record_id}. Extra columns are
-rejected before any request is made.
+\code{segment_record_id_fk} and \code{label_id_fk}. The plain names
+\code{segment_record_id} and \code{label_id} (as returned by
+\link{get_media_assets} and \link{get_project_labels}) are accepted and
+renamed automatically. The optional columns supported by the endpoint are
+\code{number_of_individuals}, \code{label_record_uuid},
+\code{prediction_accuracy}, \code{label_created_at}, and
+\code{label_record_id}. Extra columns are rejected before any request is
+made.
 }
 \examples{
 \dontrun{

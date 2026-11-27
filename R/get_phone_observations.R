@@ -1699,9 +1699,8 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #' and slow; parallel requests tend to 429). Pass several types in one call
 #' when you want a single workflow; pass one type at a time to inspect timing.
 #'
-#' @param hdr Auth headers from \link{auth_headers} or \link{auth_headers_dev}.
-#'   SIT must be used until this endpoint is on production
-#'   (\link{auth_headers_dev}).
+#' @param hdr Auth headers from \link{auth_headers} (production) or
+#'   \link{auth_headers_dev} (SIT).
 #' @param procedure Named list returned by \link{get_procedure}. Must include
 #'   \code{project_id}, \code{procedure_id}, \code{system_id},
 #'   \code{system_name}, and \code{procedure_name}.
@@ -1724,7 +1723,7 @@ download_phone_observation_export <- function(hdr, project_id, token, path = NUL
 #'
 #' @examples
 #' \dontrun{
-#'   hdr <- auth_headers_dev("your_api_key")
+#'   hdr <- auth_headers("your_api_key")
 #'   schema <- get_project_systems(hdr)
 #'   procedure <- get_procedure(schema,
 #'     system_name = "Plante Ivindo",
