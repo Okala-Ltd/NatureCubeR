@@ -4,7 +4,7 @@
 \alias{set_segment_blank_status}
 \title{Set blank status for segment labels}
 \usage{
-set_segment_blank_status(hdr, blank_status, segment_record_ids)
+set_segment_blank_status(hdr, blank_status, segment_record_ids, chunksize = 50)
 }
 \arguments{
 \item{hdr}{A base URL provided and valid API key returned by the function \link{auth_headers}.}
@@ -12,12 +12,17 @@ set_segment_blank_status(hdr, blank_status, segment_record_ids)
 \item{blank_status}{A boolean value indicating whether to mark as blank (TRUE) or unblank (FALSE).}
 
 \item{segment_record_ids}{A numeric vector of segment record IDs to update.}
+
+\item{chunksize}{An integer specifying how many segment record IDs to send per request.
+Defaults to 50. Raise it if requests finish quickly; lower it if they time out.}
 }
 \value{
-A list containing the API response message.
+A list containing the API response message from the last chunk submitted.
 }
 \description{
 Marks or unmarks segment labels as blank for a given list of segment record IDs.
+IDs are sent in chunks so a large batch does not hit the gateway timeout.
+A chunk that still returns HTTP 504 is split in half and retried.
 }
 \examples{
 \dontrun{
